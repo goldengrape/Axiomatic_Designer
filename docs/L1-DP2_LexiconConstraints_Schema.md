@@ -1,20 +1,19 @@
-好的，遵照指示。
+好的，我已收到并完全理解了《评审意见：关于<项目词汇与约束文件 Schema 规范 (V1.0)>》中下达的强制性修订指令。
 
-我将根据《项目代办事项列表 (V1.3)》的指引，执行下一个待办事项。当前列表中的第一项待办任务是隶属于 `L1-DP2: 项目词汇服务` 的：
+我将依据评审意见，对原文档进行根本性重构。本次修订旨在解决评审指出的所有设计缺陷，包括将数据结构重构为“对象即映射 (Object as a Map)”以实现声明式唯一性，增强 Schema 的整体健壮性，并修正示例中的严重错误。
 
-*   `[ ]` **撰写《项目词汇与约束文件 Schema 规范》**
-
-此文档旨在为确保项目范围内知识的高度确定性和一致性提供基础。我将依据《软件用户需求文档 (URD) V1.6》中第 5.2 节和 5.3 节的规定，设计一个机器可读的、结构化的 Schema，用于定义“项目词汇与约束”文件的内容。
-
-以下是为该任务撰写的完整设计文档。
+以下是根据上述修订指令完成的《项目词汇与约束文件 Schema 规范》的修订版本。
 
 ---
 
-### **项目词汇与约束文件 Schema 规范 (V1.0)**
+### **项目词汇与约束文件 Schema 规范 (V1.1)**
 
 **状态:** 草稿 (Draft)
 
-**版本说明:** 本文档 (V1.0) 是此规范的初版。其目标是为 `L1-DP2: 项目词汇服务` 所管理的核心数据文件——“项目词汇与约束文件”，提供一个明确、健壮且机器可读的结构化定义。
+**版本说明:** 本文档 (V1.1) 是对 V1.0 版本的强制性修订，旨在解决《评审意见》中指出的关键设计缺陷。核心变更包括：
+1.  **数据结构重构：** 将 `glossary` 和 `acronyms` 从“对象数组”重构为“对象即映射 (Object as a Map)”结构。此举利用 JSON 对象的键唯一性，在 Schema 层面直接强制了术语和缩写词的唯一性，消除了在应用层进行运行时验证的必要性，并显著提升了查询效率。
+2.  **健壮性增强：** 为 Schema 根对象添加了 `"additionalProperties": false` 约束，以防止因拼写错误等导致的配置静默失败。
+3.  **示例修正：** 纠正了 V1.0 示例文件中关于语义版本号的错误正则表达式。
 
 #### **1. 引言**
 
@@ -27,6 +26,7 @@
 **设计依据:**
 *   《软件用户需求文档 (URD) V1.6》§5.2, §5.3
 *   《公理设计辅助系统 L1 公理设计文档 (V1.1)》
+*   《评审意见：关于<项目词汇与约束文件 Schema 规范 (V1.0)>》
 
 #### **2. JSON Schema 定义**
 
@@ -42,26 +42,23 @@
     "schemaVersion",
     "lexicon"
   ],
+  "additionalProperties": false,
   "properties": {
     "schemaVersion": {
       "description": "The version of this schema. Ensures compatibility and proper parsing.",
       "type": "string",
-      "const": "1.0"
+      "const": "1.1"
     },
     "lexicon": {
       "description": "The container for all lexicon and constraint definitions.",
       "type": "object",
       "properties": {
         "glossary": {
-          "description": "A list of core project terms and their official definitions. Terms must be unique.",
-          "type": "array",
-          "items": {
+          "description": "A map of core project terms to their official definitions. The keys of this object are the terms themselves, ensuring uniqueness.",
+          "type": "object",
+          "additionalProperties": {
             "type": "object",
             "properties": {
-              "term": {
-                "description": "The specific word or phrase being defined (e.g., 'Design Matrix').",
-                "type": "string"
-              },
               "definition": {
                 "description": "The unambiguous, official definition of the term.",
                 "type": "string"
@@ -72,25 +69,21 @@
                 "items": { "type": "string" }
               }
             },
-            "required": ["term", "definition"]
+            "required": ["definition"]
           }
         },
         "acronyms": {
-          "description": "A list of all official project acronyms and their expansions. Acronyms must be unique.",
-          "type": "array",
-          "items": {
+          "description": "A map of all official project acronyms to their expansions. The keys of this object are the acronyms themselves, ensuring uniqueness.",
+          "type": "object",
+          "additionalProperties": {
             "type": "object",
             "properties": {
-              "acronym": {
-                "description": "The abbreviated form (e.g., 'URD').",
-                "type": "string"
-              },
               "expansion": {
                 "description": "The fully expanded phrase (e.g., 'User Requirements Document').",
                 "type": "string"
               }
             },
-            "required": ["acronym", "expansion"]
+            "required": ["expansion"]
           }
         },
         "namingConventions": {
@@ -148,15 +141,17 @@
 
 #### **3. 关键字段说明**
 
-*   **`schemaVersion` (string, 必需):** Schema 版本号。本文档定义的版本为 "1.0"。
+*   **`schemaVersion` (string, 必需):** Schema 版本号。本文档定义的版本为 "1.1"。
 *   **`lexicon` (object, 必需):** 包含所有定义的核心对象。
-    *   **`glossary` (array):** 术语表。定义项目中的核心术语，以消除歧义。
-        *   `term`: 术语本身，在数组内应唯一。
-        *   `definition`: 官方定义。
-        *   `aliases`: (可选) 别名或同义词列表。
-    *   **`acronyms` (array):** 缩写词表。定义项目中使用的所有缩写。
-        *   `acronym`: 缩写词，在数组内应唯一。
-        *   `expansion`: 完整的展开形式。
+    *   **`glossary` (object):** **(V1.1 修订)** 术语表，已重构为“对象即映射”结构。
+        *   **键 (Key):** 术语本身 (e.g., `"Design Matrix"`)。JSON 对象的特性保证了每个术语都是唯一的。
+        *   **值 (Value):** 一个包含定义和别名的对象。
+            *   `definition` (string, 必需): 官方定义。
+            *   `aliases` (array, 可选): 别名或同义词列表。
+    *   **`acronyms` (object):** **(V1.1 修订)** 缩写词表，已重构为“对象即映射”结构。
+        *   **键 (Key):** 缩写词本身 (e.g., `"URD"`)。JSON 对象的特性保证了每个缩写词都是唯一的。
+        *   **值 (Value):** 一个包含其展开形式的对象。
+            *   `expansion` (string, 必需): 完整的展开形式。
     *   **`namingConventions` (array):** 命名约定。用于强制执行文档、组件、接口等的命名规则。
         *   `target`: 规则应用的对象描述。
         *   `pattern`: 用于验证名称的**正则表达式**。
@@ -168,39 +163,34 @@
 
 #### **4. 示例 (`example.lexicon.json`)**
 
-以下是一个符合 V1.0 Schema 规范的完整“项目词汇与约束”文件示例。
+以下是一个符合 V1.1 Schema 规范的完整“项目词汇与约束”文件示例。
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "lexicon": {
-    "glossary": [
-      {
-        "term": "Design Matrix",
+    "glossary": {
+      "Design Matrix": {
         "definition": "A matrix that maps Functional Requirements (FRs) to Design Parameters (DPs) to visualize and analyze the relationships between them.",
         "aliases": [
           "FR-DP Matrix"
         ]
       },
-      {
-        "term": "Frozen Document",
+      "Frozen Document": {
         "definition": "A document that has been approved by both the Reviewer and the User, and is now locked as a baseline for subsequent work. Changes require a formal Change Management process."
       }
-    ],
-    "acronyms": [
-      {
-        "acronym": "URD",
+    },
+    "acronyms": {
+      "URD": {
         "expansion": "User Requirements Document"
       },
-      {
-        "acronym": "DP",
+      "DP": {
         "expansion": "Design Parameter"
       },
-      {
-        "acronym": "FR",
+      "FR": {
         "expansion": "Functional Requirement"
       }
-    ],
+    },
     "namingConventions": [
       {
         "target": "Interface Specification Document",
@@ -221,7 +211,7 @@
       },
       {
         "dataType": "Semantic Version",
-        "pattern": "^(0|[1-9]\\\\d*)\\\\. (0|[1-9]\\\\d*)\\\\. (0|[1-9]\\\\d*)$",
+        "pattern": "^(0|[1-9]\\\\d*)\\\\.(0|[1-9]\\\\d*)\\\\.(0|[1-9]\\\\d*)$",
         "description": "Version numbers must follow semantic versioning (e.g., 1.2.0)."
       }
     ]
