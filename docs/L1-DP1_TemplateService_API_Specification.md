@@ -1,18 +1,16 @@
-好的，遵照指示。
+好的，我已收到评审意见和相关依赖文档。
 
-我将依据《项目代办事项列表 (V1.2)》中的排序，执行下一个待办任务。当前的首要任务是为 `L1-DP1: 项目模板管理器` 撰写其服务接口规范。
+我将严格依据《对<L1-DP1 模板服务 API 接口规范 (V1.0)>的强制性修订指令》中的所有指令，对原始规范文档进行修订。本次修订旨在提升规范的**明确性、健壮性与安全性**，以确保其满足工程化实现的标准。
 
-此文档旨在定义系统的其他组件（如 L1-DP5, L1-DP6）如何通过一个标准化的、稳定的接口来获取项目模板的配置数据。这将是继《项目模板 Schema 规范》之后，完成 `L1-DP1` 设计的第二个关键步骤。
-
-以下是本次工作的完整文档。
+以下是根据指令修订后的完整文档。
 
 ---
 
-### **L1-DP1 模板服务 API 接口规范 (V1.0)**
+### **L1-DP1 模板服务 API 接口规范 (V1.1)**
 
-**状态:** 草稿 (Draft)
+**状态:** 修订稿 (Revised Draft)
 
-**版本说明:** 本文档 (V1.0) 是该 API 接口规范的初版草稿。它依据已批准的《公理设计辅助系统 L1 公理设计文档 (V1.1)》和《项目模板 Schema 规范 (V1.2)》进行撰写，旨在定义一个清晰、稳定且遵循 RESTful 设计原则的服务接口。
+**版本说明:** 本文档 (V1.1) 是对 V1.0 草稿的修订版。它依据《对<L1-DP1 模板服务 API 接口规范 (V1.0)>的强制性修订指令》（日期：2024-06-06）进行了强制性修订，解决了在模板标识符、错误处理和认证契约方面发现的缺陷。本文档旨在定义一个清晰、稳定且遵循 RESTful 设计原则的服务接口。
 
 #### **1. 引言**
 
@@ -31,8 +29,15 @@
 *   **API 版本:** API 版本通过 URL 路径进行标识。本规范定义的版本为 `v1`。
     *   示例: `https://<hostname>/api/v1/...`
 *   **数据格式:** 所有请求体（`Request Body`）和响应体（`Response Body`）均使用 `application/json` 格式，并采用 `UTF-8` 编码。
-*   **认证与授权:** 本服务部署于受信任的内部网络环境。本规范层面不定义复杂的认证机制。调用方服务的身份验证与授权由部署环境的基础设施（如服务网格、API 网关）负责。
+*   **认证与授权:** 本 API 要求所有请求**必须**包含一个认证凭据。部署时，该凭据的管理和验证可由 API 网关或服务网格等基础设施代理，但 API 契约本身要求其存在。具体实现如下：
+    *   **认证方式:** API Key
+    *   **HTTP Header:** 请求方必须在 HTTP Header 中提供 `X-System-Component-ID` 字段，其值为调用方组件的标识符（例如 `L1-DP5`）。
+    *   **授权逻辑:** 服务实现层应包含一个可配置的访问控制列表（ACL），用于验证该组件 ID 是否有权访问。在初始部署中，此 ACL 可配置为允许所有受信任的内部组件。
 *   **错误处理:** API 使用标准的 HTTP 状态码来指示请求的成功或失败。当发生错误时，响应体应包含一个标准化的错误对象。
+
+##### **2.1. 模板标识符 (`template_name`) 规范**
+
+`template_name` 是项目模板物理文件名的基本名称（即不含 `.project.json` 扩展名）。它必须遵循 URL-safe 字符集（例如 `[a-zA-Z0-9_-]`），且在模板库中必须唯一。
 
 #### **3. 数据模型 (Data Models)**
 
@@ -64,12 +69,12 @@
 
 ```json
 {
-  "templateName": "string",
+  "template_name": "string",
   "projectName": "string"
 }
 ```
 
-*   `templateName` (string): 模板的唯一标识符，用作 API 路径参数。
+*   `template_name` (string): 模板的唯一标识符，用作 API 路径参数。其定义见章节 2.1。
 *   `projectName` (string): 模板中定义的、对用户友好的项目名称。
 
 #### **4. 端点定义 (Endpoint Definitions)**
@@ -86,7 +91,7 @@
 
 | 参数名 | 类型 | 描述 | 是否必需 |
 | :--- | :--- | :--- | :--- |
-| `template_name` | `string` | 项目模板的唯一标识符（例如，`default-engineering-v1`）。此名称应遵循安全的 URL 命名约定。 | 是 |
+| `template_name` | `string` | 项目模板的唯一标识符（例如，`default-engineering-v1-2`）。其定义见章节 2.1。 | 是 |
 
 **成功响应 (Success Response):**
 
@@ -105,6 +110,18 @@
           }
         }
         ```
+*   **状态码:** `409 Conflict`
+    *   **描述:** 当模板文件存在，但其内容不符合《项目模板 Schema 规范 (V1.2)》时返回。
+    *   **响应体:**
+        ```json
+        {
+          "error": {
+            "code": "TEMPLATE_SCHEMA_VALIDATION_FAILED",
+            "message": "The template file is present but fails schema validation.",
+            "details": "Validation error details provided by the schema validator library..."
+          }
+        }
+        ```
 *   **状态码:** `500 Internal Server Error`
     *   **描述:** 当服务器在读取或解析模板文件时发生内部错误。
     *   **响应体:**
@@ -119,7 +136,9 @@
 
 ##### **4.2. 列出所有可用的模板**
 
-提供模板发现功能，允许调用方查询当前系统中所有可用的模板列表。
+提供模板发现功能，允许调用方查询当前系统中所有可用的模板列表。为生成此列表，服务将扫描模板存储库，从每个文件的文件名派生 `template_name`，并解析每个文件以提取 `projectName`。
+
+**性能提示:** 注意：此操作涉及文件 I/O 和 JSON 解析，调用方应避免高频轮询。
 
 *   **HTTP 方法:** `GET`
 *   **路径:** `/api/v1/templates`
@@ -132,11 +151,11 @@
     ```json
     [
       {
-        "templateName": "default-engineering-v1.2",
+        "template_name": "default-engineering-v1-2",
         "projectName": "Default Engineering Design Template (Modular & Robust)"
       },
       {
-        "templateName": "ur-capture-template-v1.0",
+        "template_name": "ur-capture-template-v1-0",
         "projectName": "User Requirement Capture Template"
       }
     ]
@@ -153,17 +172,19 @@
 
 1.  **可选步骤 - 发现模板:** `L1-DP5` 向 `GET /api/v1/templates` 发送请求，获取所有可用模板列表，以确定需要使用的 `template_name`。
 
-2.  **核心步骤 - 获取模板:** `L1-DP5` 根据任务指令，向 `GET /api/v1/templates/default-engineering-v1.2` 发送请求。
+2.  **核心步骤 - 获取模板:** `L1-DP5` 根据任务指令，向 `GET /api/v1/templates/default-engineering-v1-2` 发送请求。
 
 3.  **处理响应:**
     *   如果收到 `200 OK` 响应，`L1-DP5` 解析响应体中的 JSON 对象，并使用其中的 `componentSettings.dp5` 部分来配置其内部的 LLM 行为。
-    *   如果收到 `404 Not Found` 或 `500 Internal Server Error` 响应，`L1-DP5` 将向上游（`L1-DP0`）报告一个配置失败的错误，并中止当前任务。
+    *   如果收到 `404 Not Found`、`409 Conflict` 或 `500 Internal Server Error` 响应，`L1-DP5` 将向上游（`L1-DP0`）报告一个配置失败的错误，并中止当前任务。
 
 **cURL 示例:**
 
 ```bash
-# 请求获取名为 'default-engineering-v1.2' 的模板
-curl -X GET 'https://<hostname>/api/v1/templates/default-engineering-v1.2'
+# 请求获取名为 'default-engineering-v1-2' 的模板
+curl -X GET \
+  -H "X-System-Component-ID: L1-DP5" \
+  'https://<hostname>/api/v1/templates/default-engineering-v1-2'
 
 # 预期的成功响应 (200 OK) - 内容为完整的模板JSON
 # (此处省略完整内容，其结构与《项目模板 Schema 规范 (V1.2)》中的示例完全一致)
