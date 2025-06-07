@@ -1,16 +1,16 @@
-好的，我已收到评审意见和相关依赖文档。
+好的，我已收到并仔细研读了所有输入文件，特别是《关于<L1-DP1 模板服务 API 接口规范 (V1.1)>的评审意见与强制性修订指令》。
 
-我将严格依据《对<L1-DP1 模板服务 API 接口规范 (V1.0)>的强制性修订指令》中的所有指令，对原始规范文档进行修订。本次修订旨在提升规范的**明确性、健壮性与安全性**，以确保其满足工程化实现的标准。
+我将严格依据该评审意见中列出的三条强制性修订指令，对 `V1.1` 版本的API规范进行修订。本次修订的核心是纠正认证机制的根本性缺陷，并补全缺失的错误处理契约，以使规范达到工程上要求的健壮性与安全性标准。
 
 以下是根据指令修订后的完整文档。
 
 ---
 
-### **L1-DP1 模板服务 API 接口规范 (V1.1)**
+### **L1-DP1 模板服务 API 接口规范 (V1.2)**
 
 **状态:** 修订稿 (Revised Draft)
 
-**版本说明:** 本文档 (V1.1) 是对 V1.0 草稿的修订版。它依据《对<L1-DP1 模板服务 API 接口规范 (V1.0)>的强制性修订指令》（日期：2024-06-06）进行了强制性修订，解决了在模板标识符、错误处理和认证契约方面发现的缺陷。本文档旨在定义一个清晰、稳定且遵循 RESTful 设计原则的服务接口。
+**版本说明:** 本文档 (V1.2) 是对 V1.1 版本的修订版。它依据《关于<L1-DP1 模板服务 API 接口规范 (V1.1)>的评审意见与强制性修订指令》（日期：2024-06-07）进行了强制性修订。核心变更包括：1) 引入了基于 `Authorization` Header 的真实认证机制，与 `X-System-Component-ID` 的身份标识功能分离；2) 补充了缺失的 `401 Unauthorized` 和 `403 Forbidden` 错误响应定义；3) 明确了列表端点在无可用模板时的响应行为。
 
 #### **1. 引言**
 
@@ -29,10 +29,12 @@
 *   **API 版本:** API 版本通过 URL 路径进行标识。本规范定义的版本为 `v1`。
     *   示例: `https://<hostname>/api/v1/...`
 *   **数据格式:** 所有请求体（`Request Body`）和响应体（`Response Body`）均使用 `application/json` 格式，并采用 `UTF-8` 编码。
-*   **认证与授权:** 本 API 要求所有请求**必须**包含一个认证凭据。部署时，该凭据的管理和验证可由 API 网关或服务网格等基础设施代理，但 API 契约本身要求其存在。具体实现如下：
-    *   **认证方式:** API Key
-    *   **HTTP Header:** 请求方必须在 HTTP Header 中提供 `X-System-Component-ID` 字段，其值为调用方组件的标识符（例如 `L1-DP5`）。
-    *   **授权逻辑:** 服务实现层应包含一个可配置的访问控制列表（ACL），用于验证该组件 ID 是否有权访问。在初始部署中，此 ACL 可配置为允许所有受信任的内部组件。
+*   **认证与授权:** 本 API 要求所有请求**必须**同时包含**身份标识**和**认证凭据**。缺少任何一项或验证失败都将导致请求被拒绝。部署时，凭据验证可由 API 网关或服务网格等基础设施代理。
+    *   **认证方式 (Authentication):** 请求方必须在 HTTP Header 中提供一个承载秘密信息的 `Authorization` 字段，用于验证请求的合法性。
+        *   **HTTP Header:** `Authorization`
+        *   **值格式:** `Bearer <token>` 或 `ApiKey <key>`。具体的令牌（token）或密钥（key）由系统统一分发和管理。
+    *   **身份标识 (Identification):** 请求方必须在 HTTP Header 中提供 `X-System-Component-ID` 字段，其值为调用方组件的标识符（例如 `L1-DP5`）。此标识符用于日志记录、追踪和授权决策。
+    *   **授权逻辑 (Authorization):** 服务实现层应包含一个可配置的访问控制列表（ACL），用于验证 `X-System-Component-ID` 所标识的组件是否有权访问所请求的资源。此检查在认证成功后执行。
 *   **错误处理:** API 使用标准的 HTTP 状态码来指示请求的成功或失败。当发生错误时，响应体应包含一个标准化的错误对象。
 
 ##### **2.1. 模板标识符 (`template_name`) 规范**
@@ -100,6 +102,28 @@
 
 **错误响应 (Error Responses):**
 
+*   **状态码:** `401 Unauthorized`
+    *   **描述:** 当请求未提供认证凭据（如 `Authorization` Header 丢失或格式错误）时返回。
+    *   **响应体:**
+        ```json
+        {
+          "error": {
+            "code": "AUTHENTICATION_CREDENTIALS_MISSING",
+            "message": "Authentication credentials were not provided."
+          }
+        }
+        ```
+*   **状态码:** `403 Forbidden`
+    *   **描述:** 当请求提供了有效的认证凭据，但凭据对应的组件没有权限访问该资源时返回。
+    *   **响应体:**
+        ```json
+        {
+          "error": {
+            "code": "PERMISSION_DENIED",
+            "message": "The requesting component does not have permission to access this resource."
+          }
+        }
+        ```
 *   **状态码:** `404 Not Found`
     *   **响应体:**
         ```json
@@ -147,7 +171,7 @@
 **成功响应 (Success Response):**
 
 *   **状态码:** `200 OK`
-*   **响应体:** 一个 JSON 数组，其中每个元素都是一个 `TemplateSummary` 对象。
+*   **响应体:** 一个 JSON 数组，其中每个元素都是一个 `TemplateSummary` 对象。若系统当前无任何可用模板，API应返回一个空的 JSON 数组 (`[]`)。
     ```json
     [
       {
@@ -163,6 +187,28 @@
 
 **错误响应 (Error Responses):**
 
+*   **状态码:** `401 Unauthorized`
+    *   **描述:** 当请求未提供认证凭据（如 `Authorization` Header 丢失或格式错误）时返回。
+    *   **响应体:**
+        ```json
+        {
+          "error": {
+            "code": "AUTHENTICATION_CREDENTIALS_MISSING",
+            "message": "Authentication credentials were not provided."
+          }
+        }
+        ```
+*   **状态码:** `403 Forbidden`
+    *   **描述:** 当请求提供了有效的认证凭据，但凭据对应的组件没有权限访问该资源时返回。
+    *   **响应体:**
+        ```json
+        {
+          "error": {
+            "code": "PERMISSION_DENIED",
+            "message": "The requesting component does not have permission to access this resource."
+          }
+        }
+        ```
 *   **状态码:** `500 Internal Server Error`
     *   **描述:** 当服务器在访问模板库时发生内部错误。
 
@@ -176,13 +222,16 @@
 
 3.  **处理响应:**
     *   如果收到 `200 OK` 响应，`L1-DP5` 解析响应体中的 JSON 对象，并使用其中的 `componentSettings.dp5` 部分来配置其内部的 LLM 行为。
-    *   如果收到 `404 Not Found`、`409 Conflict` 或 `500 Internal Server Error` 响应，`L1-DP5` 将向上游（`L1-DP0`）报告一个配置失败的错误，并中止当前任务。
+    *   如果收到 `4xx` 或 `5xx` 响应，`L1-DP5` 将向上游（`L1-DP0`）报告一个配置失败的错误，并中止当前任务。
 
 **cURL 示例:**
 
 ```bash
 # 请求获取名为 'default-engineering-v1-2' 的模板
+# -H "Authorization" 用于安全认证
+# -H "X-System-Component-ID" 用于身份标识和授权
 curl -X GET \
+  -H "Authorization: Bearer <your_secure_token>" \
   -H "X-System-Component-ID: L1-DP5" \
   'https://<hostname>/api/v1/templates/default-engineering-v1-2'
 
