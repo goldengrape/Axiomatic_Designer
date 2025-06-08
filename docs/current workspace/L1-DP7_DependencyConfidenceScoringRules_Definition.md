@@ -1,18 +1,21 @@
 好的，遵照指示。
 
-我将根据《项目代办事项列表 (V2.4)》的顺序，开始执行下一项待办工作：**撰写《依赖关系置信度评分计算规则定义文档》**。
+我已收到并深入研究了《评审意见：关于<依赖关系置信度评分计算规则定义文档 (V1.0)>》。该评审结论为“批准，附带建议性修订”。
 
-这份文档旨在将《软件用户需求文档 (URD) V1.6》§3.2.3.1 中关于“置信度评分”的原则，形式化为一套清晰、无歧义、可直接转化为代码实现的算法。这份规则是 `L1-DP7: 版本控制与变更服务` 在执行变更影响分析时的核心逻辑。
+我将依据该评审文档中提出的三项建议性修订意见，对规范进行修订。本次修订的核心是增强算法定义的逻辑完备性和术语精确性。
 
-以下是本次工作的产出文档。
+以下是修订后的完整文档。
 
 ---
 
-### **依赖关系置信度评分计算规则定义文档 (V1.0)**
+### **依赖关系置信度评分计算规则定义文档 (V1.1)**
 
 **状态:** 草稿
 
-**版本说明:** 本文档 (V1.0) 是该规范的初版。其目的是对《软件用户需求文档 (URD) V1.6》中定义的“置信度评分”计算原则进行形式化和算法化，为 `L1-DP7: 版本控制与变更服务` 的具体实现提供一个确定性的、可配置的逻辑基础。
+**版本说明:** 本文档 (V1.1) 是对 V1.0 版本的修订。它依据《评审意见：关于<依赖关系置信度评分计算规则定义文档 (V1.0)>》中提出的建议性意见进行修订，旨在增强文档的逻辑完备性与术语精确性。核心变更包括：
+1.  **明确算法前提:** 新增了关于算法有效性前提的说明，明确指出其对“可引用元素必须拥有唯一标识符”这一系统级契约的依赖。
+2.  **精化参数分类:** 重构了可配置参数表，将参数分类为更精确的“基准分权重”和“调整系数”，以消除术语上的歧义。
+3.  **补充设计说明:** 为“关键词匹配”这一低置信度链接的简化评分模型增加了设计说明，阐明了当前设计的考量并为未来迭代指明了方向。
 
 #### **1. 引言**
 
@@ -41,6 +44,8 @@
 
 #### **3. 评分算法形式化定义**
 
+**算法前提说明:** 本算法中“变更范围调整系数”的计算逻辑（步骤2），其有效性严格依赖于一个系统级契约：所有项目文档中可被追溯的元素（如功能需求FR、设计参数DP等）**必须**拥有唯一的、机器可解析的标识符。`ParseReferencedElements` 和 `WasReferencedElementModified` 函数的实现依赖此标识符的存在来进行精确匹配。
+
 算法被设计为一个纯函数，用于评估一个下游文档 (`target_document`) 对一个已变更的源文档 (`source_document`) 的依赖置信度。
 
 **伪代码表示:**
@@ -48,14 +53,14 @@
 ```
 // 定义可配置的参数结构
 DataStructure ScoringConfig {
-  weights: {
+  base_score_weights: {
     parent_child: float,        // 父子层级关系权重
     explicit_reference: float,  // 显式引用权重
-    semantic_factor: float,     // 语义相似度权重因子
     keyword_match: float        // 关键词匹配权重
   },
-  multipliers: {
-    direct_impact: float        // 变更范围直接命中的乘数
+  adjustment_factors: {
+    direct_impact: float,       // 变更范围直接命中的乘数
+    semantic_factor: float      // 语义相似度得分的缩放系数
   },
   thresholds: {
     high: float,                // 高置信度分类阈值
@@ -71,19 +76,20 @@ Function CalculateConfidence(source_doc_before: Document, source_doc_after: Docu
   reason_base = "";
   switch (link_info.type) {
     case "PARENT_CHILD":
-      base_score = config.weights.parent_child;
+      base_score = config.base_score_weights.parent_child;
       reason_base = "直接父子层级关系";
       break;
     case "EXPLICIT_REFERENCE":
-      base_score = config.weights.explicit_reference;
+      base_score = config.base_score_weights.explicit_reference;
       reason_base = "通过结构化标签显式引用";
       break;
     case "SEMANTIC_SIMILARITY":
-      base_score = link_info.similarity_score * config.weights.semantic_factor;
+      // 注意：语义相似度的原始分由外部提供，此处仅应用缩放系数
+      base_score = link_info.similarity_score * config.adjustment_factors.semantic_factor;
       reason_base = "通过语义相似性关联";
       break;
     case "KEYWORD_MATCH":
-      base_score = config.weights.keyword_match;
+      base_score = config.base_score_weights.keyword_match;
       reason_base = "通过关键词匹配关联";
       break;
   }
@@ -98,7 +104,7 @@ Function CalculateConfidence(source_doc_before: Document, source_doc_after: Docu
     
     // 比较 source_doc_before 和 source_doc_after，判断被引用的元素是否被修改
     if (WasReferencedElementModified(source_doc_before, source_doc_after, referenced_element_ids)) {
-      scope_factor = config.multipliers.direct_impact;
+      scope_factor = config.adjustment_factors.direct_impact;
       reason_scope = "变更内容直接影响了被引用的元素";
     }
   }
@@ -127,15 +133,15 @@ Function CalculateConfidence(source_doc_before: Document, source_doc_after: Docu
 
 以下参数应由项目模板提供，并传递给 `L1-DP7` 服务。
 
-| 分类        | 参数                 | 类型  | 默认值 | 描述                                                                |
-| :---------- | :------------------- | :---- | :----- | :------------------------------------------------------------------ |
-| **权重**    | `parent_child`       | float | 0.9    | 父子层级关系（如 L2 对 L1 分解）的基准分。                          |
-|             | `explicit_reference` | float | 0.8    | 通过 `[TraceabilityCheck]` 等标签显式引用的基准分。                 |
-|             | `semantic_factor`    | float | 0.6    | 语义相似度得分的权重因子。                                          |
-|             | `keyword_match`      | float | 0.2    | 仅通过关键词匹配的基准分。                                          |
-| **乘数**    | `direct_impact`      | float | 1.2    | 当变更直接命中被下游引用的FR/DP时，应用的调整乘数。                 |
-| **阈值**    | `high`               | float | 0.75   | 判断为 `HIGH` 置信度的最低分。                                      |
-|             | `medium`             | float | 0.4    | 判断为 `MEDIUM` 置信度的最低分。                                    |
+| 分类             | 参数                 | 类型  | 默认值 | 描述                                                                          |
+| :--------------- | :------------------- | :---- | :----- | :---------------------------------------------------------------------------- |
+| **基准分权重**   | `parent_child`       | float | 0.9    | 父子层级关系（如 L2 对 L1 分解）的**基准分**。                                  |
+| (Base Score Weights) | `explicit_reference` | float | 0.8    | 通过 `[TraceabilityCheck]` 等标签显式引用的**基准分**。                       |
+|                  | `keyword_match`      | float | 0.2    | 仅通过关键词匹配的**基准分**。                                                |
+| **调整系数**     | `direct_impact`      | float | 1.2    | 当变更直接命中被下游引用的FR/DP时，应用于基准分的**调整乘数**。               |
+| (Adjustment Factors) | `semantic_factor`    | float | 0.6    | 应用于外部传入的“语义相似度原始分”的**缩放系数**，用于将其转换为系统内的基准分。 |
+| **阈值**         | `high`               | float | 0.75   | 判断为 `HIGH` 置信度的最低分。                                                |
+| (Thresholds)     | `medium`             | float | 0.4    | 判断为 `MEDIUM` 置信度的最低分。                                              |
 
 #### **5. 应用场景示例**
 
@@ -146,8 +152,8 @@ Function CalculateConfidence(source_doc_before: Document, source_doc_after: Docu
     *   `link_info`: `{type: "PARENT_CHILD"}`
     *   `source_doc` 变更: 命中了 `L1-DP5` 的定义部分。
 *   **计算过程:**
-    1.  **基准分:** `base_score = config.weights.parent_child` = **0.9**
-    2.  **调整系数:** 变更命中了作为父子关系核心的 `L1-DP5`。`scope_factor = config.multipliers.direct_impact` = **1.2**
+    1.  **基准分:** `base_score = config.base_score_weights.parent_child` = **0.9**
+    2.  **调整系数:** 变更命中了作为父子关系核心的 `L1-DP5`。`scope_factor = config.adjustment_factors.direct_impact` = **1.2**
     3.  **最终得分:** `0.9 * 1.2 = 1.08`，裁剪后为 **1.0**。
 *   **输出:**
     *   `score`: 1.0
@@ -161,7 +167,7 @@ Function CalculateConfidence(source_doc_before: Document, source_doc_after: Docu
     *   `link_info`: `{type: "SEMANTIC_SIMILARITY", similarity_score: 0.85}`
     *   `source_doc` 变更: `Best_Practices.md` 内容更新。
 *   **计算过程:**
-    1.  **基准分:** `base_score = 0.85 * config.weights.semantic_factor` = `0.85 * 0.6` = **0.51**
+    1.  **基准分:** `base_score = 0.85 * config.adjustment_factors.semantic_factor` = `0.85 * 0.6` = **0.51**
     2.  **调整系数:** 语义链接不触发范围检查。`scope_factor` = **1.0**
     3.  **最终得分:** `0.51 * 1.0` = **0.51**
 *   **输出:**
@@ -176,13 +182,15 @@ Function CalculateConfidence(source_doc_before: Document, source_doc_after: Docu
     *   `link_info`: `{type: "KEYWORD_MATCH"}`
     *   `source_doc` 变更: 未命中 "API" 术语。
 *   **计算过程:**
-    1.  **基准分:** `base_score = config.weights.keyword_match` = **0.2**
+    1.  **基准分:** `base_score = config.base_score_weights.keyword_match` = **0.2**
     2.  **调整系数:** 关键词匹配不触发范围检查。`scope_factor` = **1.0**
     3.  **最终得分:** `0.2 * 1.0` = **0.2**
 *   **输出:**
     *   `score`: 0.2
     *   `category`: `LOW`
     *   `reason`: "通过关键词匹配关联"
+
+**设计说明:** 当前模型为“关键词匹配”提供了一个固定的基准分，这是一种为了实现确定性和简化计算而采取的设计。未来的增强版本可以探索更动态的评分模型，例如：根据匹配关键词的数量、关键词在《项目词汇表》中定义的重要性，或其在文档中的上下文位置，来动态计算此基准分。
 
 ---
 Gemini 2.5 Pro 0605 writer
