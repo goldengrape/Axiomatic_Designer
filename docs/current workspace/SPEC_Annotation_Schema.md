@@ -1,112 +1,132 @@
 好的，遵照指示。
 
-我将根据《项目代办事项列表 (V2.6)》中的下一个待办任务，开始撰写《即时反馈批注 (priority_revisions.md) 数据结构与锚点机制规范》。
+我已收到并分析了《评审意见：关于<审查意见文档 (review_feedback.md) 结构化 Schema 规范 (V1.0)>》。现根据其中的强制性修订指令和建议性修订项，对该规范进行修订。
 
-本次工作的目标是定义一个标准化的文件格式，用于存储用户通过“即时反馈接口”提交的批注。这份规范将详细阐述其数据结构，并重点说明在《软件用户需求文档 (URD) V1.6》§7.3中强制要求的、用于保证定位鲁棒性的“上下文片段锚点”机制。这份文件将作为“撰写员”(L1-DP5) 执行高优先级修订任务的核心输入。
+本次修订旨在解决原设计中违反信息公理的问题，并增强系统的可追溯性。修订后的文档版本将更新为 V1.1。
+
+以下是更新后的完整文档。
 
 ---
 
-### **即时反馈批注 (priority_revisions.md) 数据结构与锚点机制规范 (V1.0)**
+### **审查意见文档 (review_feedback.md) 结构化 Schema 规范 (V1.1)**
 
-**状态:** 草案
+**状态:** 草稿 (Draft)
 
-**版本说明:** 本文档 (V1.0) 是该规范的初版。其目的是为用户通过“即时反馈接口”提交的批注内容，定义一个标准化的、可被机器解析的、基于 Markdown 的文件格式 (`priority_revisions.md`)。
+**版本说明:** 本文档 (V1.1) 是对 V1.0 版本的修订，旨在响应《评审意见：关于<审查意见文档 (review_feedback.md) 结构化 Schema 规范 (V1.0)>》中指出的设计缺陷。本次修订的核心变更包括：1) 遵循信息公理，移除了“详细发现”位置块中的冗余文档URI；2) 新增了可选的 `previous_review_id` 字段，以在元数据层面构建一个明确的、可追溯的“审查链”。
 
 #### **1. 引言**
 
-本文档详细定义了“即时反馈批注”文件 (`priority_revisions.md`) 的标准结构。该文件由 `L1-DP8: 用户命令与控制` 模块根据用户的即时反馈操作动态生成，并作为具有最高优先级的输入，提供给 `L1-DP5: 内容生成与修订引擎` 来指导其修订工作。
+本文档定义了“审查意见文档” (`review_feedback.md`) 的标准结构。该文档是 `L1-DP6: 评审与评估引擎` 在完成评审任务后的核心产出，同时也是 `L1-DP5: 内容生成与修订引擎` 执行修订任务的关键输入。
 
 **设计目标:**
-*   **鲁棒定位 (Robust Positioning):** 核心设计目标是实现 URD §7.3 中要求的、不依赖于脆弱的行号的鲁棒定位机制。本规范通过“上下文片段锚点”来实现此目标。
-*   **机器可解析性 (Machine-Parsable):** 文件必须具有清晰的结构，以便 `L1-DP5` 能够确定性地解析出每一条批注及其关联的上下文。
-*   **人类可读性 (Human-Readable):** 文件格式应足够清晰，以便于开发者或审计人员进行调试和审查。
+*   **双重可读性 (Dual Readability):** 文件格式必须同时满足人类用户（进行审计或监督）和自动化系统（`L1-DP5`）的阅读需求。
+*   **机器可解析性 (Machine-Parsable):** 文件的核心元数据和审查结论必须以结构化的方式嵌入，以便于系统进行确定性的解析和处理。
+*   **可追溯性 (Traceability):** 每个发现项都拥有唯一的标识符，并通过 `previous_review_id` 形成了审查链，便于 `L1-DP5` 在后续的修订说明中明确回应，形成闭环。
 
-本规范将 `L1-DP8` API (`POST /api/v1/annotations`) 捕获的单条批注数据，聚合到一个单一的 Markdown 文件中。文件结构通过 **YAML Front Matter** 和 **标准化的 Markdown 块** 来实现。
+本规范将 `L1-DP6` API 的 `ReviewResponse` 对象映射为 Markdown 文件，主要通过 **YAML Front Matter** 实现元数据的结构化，通过 **标准化的 Markdown 标题和表格** 实现内容的结构化。
 
 **设计依据:**
-*   《软件用户需求文档 (URD) V1.6》 (特别是 §7.3 对锚点机制的要求, §2.1 对 `priority_revisions.md` 的定义)
-*   《L1-DP8 用户命令与控制 API 接口规范 (V1.0)》 (本规范是其 `Annotation` 数据模型的持久化格式)
-*   《项目代办事项列表 (V2.6)》
+*   《L1-DP6 评审与评估引擎 API 接口规范 (V1.1)》 (本规范是其响应体 `ReviewResponse` 的一种序列化形式)
+*   《软件用户需求文档 (URD) V1.6》
+*   《评审意见：关于<审查意见文档 (review_feedback.md) 结构化 Schema 规范 (V1.0)>》
 
 #### **2. 文件结构定义**
 
-`priority_revisions.md` 文件由两部分组成：一个 YAML Front Matter 块和一个 Markdown 正文。
+`review_feedback.md` 文件由两部分组成：一个 YAML Front Matter 块和一个 Markdown 正文。
 
 ##### **2.1. YAML Front Matter**
 
-此部分包含了适用于文件中所有批注的通用元数据。它必须位于文件的最顶部，并由三条短划线 (`---`) 包围。
+此部分包含了所有用于驱动工作流和进行追溯的核心元数据。它必须位于文件的最顶部，并由三条短划线 (`---`) 包围。
 
-| 键 (Key) | 类型 | 是否必需 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `schema_version` | string | 是 | 本批注文件 Schema 的版本号。本文档定义为 "1.0"。 |
-| `target_document_uri` | string | 是 | 所有批注所针对的目标文档的唯一版本化URI。 |
-| `generated_at` | string | 是 | 本批注文件的生成时间戳 (ISO 8601格式)。 |
+| 键 (Key) | 类型 | 是否必需 | 描述 | 来源 (API Response) |
+| :--- | :--- | :--- | :--- | :--- |
+| `review_id` | string | 是 | 本次评审任务的唯一标识符。 | `ReviewResponse.review_id` |
+| `previous_review_id` | string | 否 | 上一轮审查的唯一标识符。用于在多次审查-修订循环中形成一个可追溯的链条。仅在非首次审查时存在。 | `ReviewResponse.previous_review_id` |
+| `document_uri` | string | 是 | 被评审文档的唯一版本化URI。 | `ReviewRequest.document_uri` |
+| `overall_decision` | string | 是 | 最终评审决策。枚举值：`APPROVED`, `REVISION_REQUESTED`, `ARBITRATION_REQUIRED`。 | `ReviewResponse.overall_decision` |
+| `decision_reason_code` | string | 否 | 当决策为 `ARBITRATION_REQUIRED` 时，提供机器可读的触发代码。 | `ReviewResponse.decision_reason.code` |
+| `generated_at` | string | 是 | 本审查意见文档的生成时间戳 (ISO 8601格式)。 | `L1-DP6` 生成时的时间 |
 
 ##### **2.2. Markdown 正文 (Body)**
 
-正文部分使用标准的 Markdown 语法，以列表的形式组织一条或多条批注。每一条批注都是一个独立的、结构化的内容块。
+正文部分使用标准的 Markdown 语法，以人类可读的方式展示评审的详细内容。
 
-*   **一级标题 (`#`):** `即时反馈批注`
+*   **一级标题 (`#`):** `评审报告: <文档名>`
+    *   动态生成，`<文档名>` 为被评审文档的友好名称。
 
-*   **批注条目 (Annotation Item):**
-    *   每一条批注都由一个二级标题 (`##`) 开始，并包含一个唯一的、顺序生成的ID，便于引用和追踪。
-    *   **二级标题 (`##`):** `批注: <annotation_id>` (例如: `## 批注: annotation-001`)
+*   **二级标题 (`##`):** `1. 总体摘要`
+    *   **内容:** 直接渲染 `ReviewResponse.executive_summary` 字段的字符串内容。
 
-*   **批注详情 (Annotation Details):**
-    *   在二级标题下，使用定义列表或键值对的形式展示批注的具体信息。
-        *   **作者 (Author):** 提交此批注的用户ID。
-        *   **批注内容 (Comment):** 用户输入的具体批注文本。
+*   **二级标题 (`##`):** `2. 审查清单响应`
+    *   **内容:** 将 `ReviewResponse.checklist_responses` 数组渲染成一个 Markdown 表格。
+    *   **表格列:**
+        1.  **审查项 (Checklist Item):** 对应 `checklist_item_text`。
+        2.  **状态 (Status):** 对应 `status`。推荐使用表情符号增强可读性 (如: ✅ `PASSED`, ❌ `FAILED`, 🤷 `NOT_APPLICABLE`)。
+        3.  **说明/证据 (Evidence):** 对应 `evidence`。
 
-*   **定位锚点 (Context Anchor):**
-    *   这是实现鲁棒定位的核心机制。它通过一个引用块 (`>`) 和一个代码块 (` ``` `) 来清晰地展示用户批注时所选中的上下文片段。
-    *   `L1-DP5` 在执行修订时，**必须**使用此处的上下文片段，在 `target_document_uri` 指向的文档内容中进行模糊或精确匹配，以定位需要修订的具体位置。这种方法使得即使原文的行号发生变化，定位依然有效。
-    *   **结构:**
-        ```markdown
-        > [!NOTE] 定位锚点 (Context Anchor)
-        >
-        > ```<language>
-        > <target_context_snippet>
-        > ```
-        ```
-        *   `<language>`: 上下文片段的语言类型 (如 `markdown`, `json`)，用于语法高亮，可选。
-        *   `<target_context_snippet>`: `L1-DP8` API 捕获的、作为“锚点”的原始上下文片段。
+*   **二级标题 (`##`):** `3. 详细发现`
+    *   **内容:**
+        *   如果 `ReviewResponse.findings` 数组为空，则显示“未发现具体问题。”
+        *   如果数组不为空，则遍历每个 `Finding` 对象，并为每一项生成一个三级子标题和内容块。
+    *   **三级标题 (`###`):** `发现项: <finding_id> (<severity>)`
+        *   动态生成，`<finding_id>` 和 `<severity>` 分别对应 `Finding` 对象的同名字段。
+    *   **内容块:** 使用定义列表或普通文本清晰地展示 `Finding` 对象的其他字段：
+        *   **描述 (Description):** `Finding.description` 的内容。
+        *   **建议 (Suggestion):** `Finding.suggestion` 的内容。
+        *   **位置 (Location):** 使用 Markdown 引用块 (`>`) 来展示定位信息，包括行号和上下文片段。格式如下：
+            ```markdown
+            > [!NOTE]
+            > **行号:** `start_line` - `end_line`
+            >
+            > ```<language>
+            > <context_snippet>
+            > ```
+            ```
 
 #### **3. 完整示例**
 
-以下是一个完整的 `priority_revisions.md` 文件示例。该文件包含了针对一份 L2 设计文档的两条不同批注。
+以下是一个符合 V1.1 Schema 规范的完整 `review_feedback.md` 文件示例。它精确地映射了《L1-DP6 评审与评估引擎 API 接口规范 (V1.1)》中的示例响应，并体现了本次修订的内容。
 
 ```markdown
 ---
-schema_version: "1.0"
-target_document_uri: "vcs://project-gamma/docs/AD_L2_DP5.md?commit=b4e3a2f1"
-generated_at: "2025-06-08T18:00:00Z"
+review_id: "rev-20250608-x7y8z9"
+previous_review_id: "rev-20250608-x7y8z8"
+document_uri: "vcs://project-alpha/docs/AD_L2_DP5_ContentEngine.md?commit=a1b2c3d4"
+overall_decision: "ARBITRATION_REQUIRED"
+decision_reason_code: "MAX_CYCLES_REACHED"
+generated_at: "2025-06-08T14:30:00Z"
 ---
 
-# 即时反馈批注
+# 评审报告: AD_L2_DP5_ContentEngine.md
 
-## 批注: annotation-001
+## 1. 总体摘要
 
-*   **作者 (Author):** `user-jane.doe`
-*   **批注内容 (Comment):** 这里的“适配器”模式描述得不够清晰。请明确说明它要适配的是什么，以及它如何解决不同LLM接口的差异。
+在多次修订后，文档仍然未能解决一个关键的独立公理违反问题。现在需要用户仲裁才能继续。
 
-> [!NOTE] 定位锚点 (Context Anchor)
+## 2. 审查清单响应
+
+| 审查项 | 状态 | 说明/证据 |
+| :--- | :---: | :--- |
+| [Axiom1-Check] 分析设计矩阵... | ❌ FAILED | 发现项 [find-001] 仍然未解决：L2设计矩阵仍未对角化或下三角化，表明存在持续的耦合。 |
+| 验证所有功能需求(FRs)是否被满足。 | ✅ PASSED | 所有已定义的FR均有对应的DP实现。 |
+| 检查与项目词汇约束文件的一致性。 | ✅ PASSED | 未发现术语或格式违规。 |
+
+## 3. 详细发现
+
+### 发现项: find-001 (CRITICAL)
+
+*   **描述:** 独立公理违反：L2设计矩阵显示FR2对DP3存在依赖。这种耦合必须通过重新定义FR或DP来消除，以实现解耦设计。
+*   **建议:** 考虑创建一个新的L2-DP来处理FR2从DP3所需的功能，或者重新定义FR2，使其不直接需要该信息。
+
+> [!NOTE]
+> **行号:** 85 - 92
 >
 > ```markdown
-> **DP3: LLM Prompt 引擎与适配器 (LLM Prompt Engine & Adapter)**
-> *   职责：封装与具体LLM模型交互的全部复杂性。它接收“上下文包”，动态构建最优的Prompt，处理API调用、重试和错误处理逻辑，并返回LLM的原始响应。这是一个适配器，可以为不同的LLM（如Gemini, GPT等）提供不同的实现。
-> ```
-
-## 批注: annotation-002
-
-*   **作者 (Author):** `user-john.smith`
-*   **批注内容 (Comment):** “数据耦合”这个术语在这里使用可能不准确。这看起来更像是一个顺序处理的流水线（Pipeline），请确认术语的正确性，并与项目词汇表保持一致。
-
-> [!NOTE] 定位锚点 (Context Anchor)
->
-> ```markdown
-> **数据耦合 (`O_d`):** 矩阵中的非对角线元素均为数据耦合，形成了一个清晰的、单向的数据流或“流水线”（Pipeline）。DP2依赖DP1的输出，DP3依赖DP2的输出，以此类推。
+> | FR / DP | DP1 | DP2 | DP3 |
+> | :--- | :---: | :---: | :---: |
+> | **FR1** | X | | |
+> | **FR2** | O_d | X | O_d |
 > ```
 
 ---
 Gemini 2.5 Pro 0605 writer
-```
