@@ -1,20 +1,20 @@
 好的，遵照指示。
 
-我已收到并深入研究了《评审意见报告：关于<DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.0)>》。该评审意见是深刻且切中要害的。V1.0版本的设计理念正确，但在将其转化为工程实践时，确实引入了不可接受的模糊性和逻辑黑盒。
+我将依据《评审意见报告：关于<DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.1)>》中“批准及实现指令”部分的强制性要求，对该L3设计文档进行修订。
 
-本次修订旨在彻底解决V1.0版本中存在的所有强制性缺陷，并采纳所有建议性修订，以产出一份逻辑严密、行为确定、接口清晰、具备工程健壮性的全新 L3 规范 (V1.1)。
+本次修订的核心是将评审意见中提出的、关于验证逻辑的`TODO`项，转化为具体、明确、可供工程实现的伪代码和规范说明，从而产出逻辑上更完备的 V1.2 版本。
+
+以下是本次工作的产出文档。
 
 ---
 
-### **DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.1)**
+### **DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.2)**
 
 **状态:** 草稿 (Draft)
 
-**版本说明:** 本文档 (V1.1) 是对 V1.0 版本的**强制性修订**。此版本旨在响应并解决评审报告中指出的所有设计缺陷。核心变更包括：
-1.  **引入结构化计划与验证 (M-3, R-1):** 废除了基于纯文本字符串的 `RevisionPlan`。取而代之的是一个**结构化的JSON对象** (`StructuredRevisionPlan`)。在阶段一和阶段二之间**强制**插入了一个“验证与解析”步骤，如果阶段一的LLM输出无法被解析为合法的JSON对象，将立即中断流程并抛出异常，从而消除了对LLM输出的盲目信任。
-2.  **定义LLM调用参数 (M-2):** 增加了“LLM调用配置”一节，为“三阶段思维链”中的**每一个阶段**都定义了一套独立的、固定的LLM超参数（如 `temperature`），彻底消除了原设计中的逻辑黑盒，确保了调用的可复现性和确定性。
-3.  **消除不确定性流程 (M-1):** 废除了 `FROM_SCRATCH` 模式下“可选但推荐”的模糊逻辑。该模式现已变更为一个固定的、确定性的**“两阶段流程”**（执行生成 + 自省提炼），确保了所有模式下的行为都是可预测的。
-4.  **优化Prompt上下文格式 (R-2):** 采纳了评审建议，更新了Prompt模板。模板现在期望接收预格式化的、更易于LLM理解的Markdown上下文（如术语表），而不是直接注入原始JSON，以提升Prompt效率和LLM的遵循度。
+**版本说明:** 本文档 (V1.2) 是对 V1.1 版本的**强制性实现修订**。此版本旨在完全响应并实现《V1.1 评审意见报告》中下达的强制性实现指令。核心变更如下：
+1.  **强化验证逻辑 (M-4):** 依据评审指令，对 `validate_and_parse_plan` 函数进行了彻底的细化。原先的 `TODO` 注释已被替换为明确的**“两步验证”**逻辑。该函数现在**必须**先执行JSON解析，再执行严格的**Schema验证**。任何一步的失败都将导致抛出 `MalformedLLMOutputException` 异常。此项修订将设计的健壮性从意图层面提升到了具体的规范层面。
+2.  **细化异常描述:** 相应地，更新了第8节中对 `MalformedLLMOutputException` 的描述，明确其触发条件现在包括“解析失败”和“Schema验证失败”两种情况。
 
 #### **1. 引言**
 
@@ -24,7 +24,7 @@
 
 **设计依据:**
 *   《公理设计辅助系统 L2 公理设计文档 (子系统：内容生成与修订引擎) (V1.0)》 (父级设计)
-*   **《评审意见报告：关于<DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.0)>》 (本次修订的核心驱动)**
+*   《评审意见报告：关于<DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.1)>》 (本次修订的核心驱动)
 *   《DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.2)》 (上游组件规范)
 
 #### **2. 核心设计哲学：三阶段思维链 (Three-Stage Chain-of-Thought)**
@@ -70,7 +70,7 @@
 
 #### **5. 核心处理逻辑 (Core Processing Logic)**
 
-以下是 `generateOrRevise` 函数必须遵循的、经过修订的伪代码逻辑。
+以下是 `generateOrRevise` 函数必须遵循的伪代码逻辑。
 
 ```
 Function generateOrRevise(contextPackage, generationMode, currentContent) -> FinalDocument {
@@ -81,7 +81,7 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
     planningPrompt = build_planning_prompt(contextPackage.reviewFeedback, contextPackage.priorityRevisions, currentContent);
     rawPlanningOutput = call_llm_adapter(planningPrompt, LLM_CONFIG_STAGE_1);
     
-    // [M-3] 验证与解析步骤
+    // 验证与解析步骤
     structuredPlan = validate_and_parse_plan(rawPlanningOutput); // Throws MalformedLLMOutputException on failure
 
     // 阶段二: 执行与生成
@@ -95,7 +95,7 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
     return finalDocument;
 
   } else if (generationMode == "FROM_SCRATCH") {
-    // [M-1] 执行确定的两阶段流程
+    // 执行确定的两阶段流程
     // 阶段一 (变体): 从零撰写
     executionPrompt = build_from_scratch_prompt(contextPackage);
     initialDraft = call_llm_adapter(executionPrompt, LLM_CONFIG_STAGE_2); // Re-use Stage 2 config for creative writing
@@ -108,18 +108,35 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
   }
 }
 
-Function validate_and_parse_plan(rawOutput) -> StructuredRevisionPlan {
+// [M-4] 细化验证逻辑
+Function validate_and_parse_plan(rawOutput: string) -> StructuredRevisionPlan {
+  
+  // 步骤 0 (可选但推荐): 清理常见LLM输出包裹
+  let cleanedOutput = rawOutput.trim().replace(/^```json\n/, '').replace(/\n```$/, '');
+
+  // 步骤 1: JSON 解析
+  let parsedJson;
   try {
-    parsedJson = JSON.parse(rawOutput);
-    // TODO: Add schema validation against StructuredRevisionPlan structure
-    return parsedJson;
-  } catch (error) {
-    throw new MalformedLLMOutputException("Failed to parse LLM planning output into valid JSON. Reason: " + error.message);
+    parsedJson = JSON.parse(cleanedOutput);
+  } catch (parseError) {
+    throw new MalformedLLMOutputException("LLM输出解析失败：无法将原始输出解析为合法的JSON对象。原因: " + parseError.message);
   }
+
+  // 步骤 2: Schema 验证
+  // 假设 `structuredRevisionPlanSchema` 是一个预定义的、符合JSON Schema规范的对象，
+  // 并且 `validator` 是一个实现了标准JSON Schema验证逻辑的库实例。
+  const isValid = validator.validate(parsedJson, structuredRevisionPlanSchema);
+  if (!isValid) {
+    // 将验证器的详细错误信息打包，以提供更具诊断价值的异常报告
+    const validationErrors = validator.errors.map(e => `${e.instancePath || 'root'} ${e.message}`).join('; ');
+    throw new MalformedLLMOutputException("LLM输出验证失败：JSON对象结构不符合 StructuredRevisionPlan 的既定Schema。错误详情: " + validationErrors);
+  }
+
+  return parsedJson;
 }
 ```
 
-#### **6. LLM 调用配置 (LLM Call Configuration) [M-2]**
+#### **6. LLM 调用配置 (LLM Call Configuration)**
 
 为了确保行为的确定性，对 `call_llm_adapter` 的调用**必须**传递明确的超参数配置。
 
@@ -225,8 +242,7 @@ Function validate_and_parse_plan(rawOutput) -> StructuredRevisionPlan {
 {{currentContent}}
 ```
 
-### 3. 项目词汇与约束 (必须遵循) [R-2]
-{{#* 此处期望 contextPackage.lexiconAndConstraints 已被预处理为人类易读的 Markdown 格式 *}}
+### 3. 项目词汇与约束 (必须遵循)
 #### 术语表
 - **Design Matrix:** A matrix that maps Functional Requirements (FRs) to Design Parameters (DPs).
 - **Frozen Document:** A document that has been approved and is now locked as a baseline.
@@ -283,7 +299,7 @@ Function validate_and_parse_plan(rawOutput) -> StructuredRevisionPlan {
 *   **`LLMServiceException`:**
     *   **触发条件:** 当底层的 `call_llm_adapter` 无法从 LLM 服务获得有效响应时（网络错误、API认证失败、服务超时等）。
 *   **`MalformedLLMOutputException`:**
-    *   **触发条件:** 当 LLM 的输出不符合预期的结构时。**特别是，在阶段一，如果其输出无法被 `validate_and_parse_plan` 解析为符合 `StructuredRevisionPlan` Schema 的有效JSON对象，则必须抛出此异常。**
+    *   **触发条件:** 当 LLM 的输出不符合预期的结构时。**特别是，在阶段一，如果其输出在 `validate_and_parse_plan` 函数中发生以下任一情况，则必须抛出此异常：1) 无法被解析为有效的JSON对象；2) 解析成功但未能通过针对 `StructuredRevisionPlan` Schema 的结构验证。**
     *   **目的:** 允许上层调用者识别出这是 LLM 的一次性“幻觉”或不合作行为，可触发重试或上报用户仲裁。
 
 ---
