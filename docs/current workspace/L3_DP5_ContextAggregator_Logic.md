@@ -1,22 +1,26 @@
 好的，遵照指示。
 
-我已收到并完全理解了《评审意见：关于<DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.0)>》中下达的强制性修订指令。V1.0 版本在知识仲裁、核心职责定义和设计原则表述上存在致命缺陷，使其无法作为工程实现的依据。
+我已收到并深入研究了《评审意见：关于<DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.1)>》。V1.1 版本在L3详细设计层面存在若干逻辑黑盒和潜在的性能问题，使其在工程化之前必须被修正。
 
-我将依据评审意见中列出的所有强制性和建议性修订指令，对该 L3 设计文档进行全面重写。本次修订旨在产出一份逻辑严密、职责清晰、算法确定、无信息丢失风险的全新规范 (V1.1)。
+本次修订旨在彻底解决上述所有问题，产出一份逻辑完整、无歧义、性能优化、可直接指导工程实现的全新规范 (V1.2)。
 
-以下是根据上述指令完成的修订版文档。
+核心修订内容包括：
+1.  **形式化函数契约 (M-1, M-2):** 为所有在 V1.1 中未定义的关键辅助函数 (`extract_topic_from_fragment`, `calculate_similarity`, `analyze_diff_for_changes`, `find_context_in_doc`) 补充了明确的行为契约定义，消除了所有逻辑黑盒。
+2.  **优化数据获取流程 (M-3):** 重构了主流程 `aggregateContext` 的伪代码，将文档内容的获取操作提前，消除了冗余的 I/O 调用风险，并保证了数据在流程中的一致性。
+3.  **丰富异常处理模型 (R-1):** 采纳了建议，将异常模型从泛化的 `ContextAggregationException` 细化为更具体的 `ResourceNotFoundException` 和 `DependentServiceFailureException`，为上层调用者实现更精细的错误处理策略提供了支持。
+
+以下是根据上述指令完成的 V1.2 修订版文档。
 
 ---
 
-### **DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.1)**
+### **DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.2)**
 
-**状态:** 草案
+**状态:** 草案 (Draft)
 
-**版本说明:** 本文档 (V1.1) 是对 V1.0 版本的**强制性修订**。此次修订旨在响应《评审意见》中指出的所有致命设计缺陷。核心变更包括：
-1.  **修正知识仲裁逻辑 (指令 M-1):** 重写了知识冲突解决算法，确保在仲裁后，所有未参与冲突的知识单元被完整保留，杜绝了 V1.0 中的数据丢失风险。
-2.  **明确核心职责算法 (指令 M-2):** 详细定义了“健壮锚点定位”算法的内部逻辑，将原先未定义的黑盒函数 `process_priority_revisions` 展开为符合 `L1-DP8` 规范的、确定性的、可实现的伪代码。
-3.  **精确化设计哲学 (指令 R-1):** 将对“纯函数”的误用表述，修正为更准确的“确定性与无副作用的读取器 (Deterministic & Side-effect Free Reader)”，明确了组件对外部版本化数据的依赖。
-4.  **声明隐式依赖 (指令 R-2):** 在文档中明确了对 `review_feedback.md` 解析器的依赖，消除了组件职责的模糊性。
+**版本说明:** 本文档 (V1.2) 是对 V1.1 版本的**强制性修订**。此次修订旨在响应《评审意见》中指出的所有强制性修订指令 (M-1, M-2, M-3) 和建议性修订 (R-1)。核心变更包括：
+1.  **形式化辅助函数契约:** 在附录中为 `extract_topic_from_fragment`, `calculate_similarity`, `analyze_diff_for_changes`, 和 `find_context_in_doc` 四个关键辅助函数补充了明确的逻辑和行为契约，消除了所有逻辑黑盒。
+2.  **优化数据获取顺序:** 重构了主流程 `aggregateContext` 的逻辑，确保在“修订模式”下，目标文档内容只被获取一次，避免了冗余调用并保证了数据一致性。
+3.  **细化异常处理模型:** 增强了异常处理机制，引入了更具体的异常类型，以支持上层实现更复杂的错误处理策略。
 
 #### **1. 引言**
 
@@ -24,8 +28,8 @@
 
 **设计依据:**
 *   《公理设计辅助系统 L2 公理设计文档 (子系统：内容生成与修订引擎) (V1.0)》 (父级设计)
-*   **《评审意见：关于<DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.0)>》 (本次修订的核心驱动)**
-*   所有相关的 L1 API 接口规范 (DP1, DP2, DP4, DP7, DP8) 及 Schema 规范
+*   **《评审意见：关于<DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.1)>》 (本次修订的核心驱动)**
+*   所有相关的 L1 API 接口规范 (DP1, DP2, DP3, DP4, DP7, DP8) 及 Schema 规范
 *   《项目代办事项列表 (V5.0)》
 
 #### **2. 核心职责与设计哲学**
@@ -44,12 +48,12 @@
     *   `taskObject` (`TaskObject`): 一个包含所有资源URI和元数据的“购物清单”对象。
 *   **输出:**
     *   一个 `ContextPackage` 对象。
-*   **异常处理:** 如果在聚合过程中任何一个关键的L1服务调用失败（例如，返回 `404 Not Found` 或 `500 Internal Server Error`），此函数**必须**向上抛出一个明确的、可捕获的异常（如 `ContextAggregationException`），并附带详细的失败原因。
+*   **异常处理:** 参见第6节“错误处理机制”。
 
 #### **4. 数据模型 (Data Models)**
 
 ##### **4.1. TaskObject (输入数据模型)**
-与 V1.0 保持一致。
+与 V1.1 保持一致。
 
 ```json
 {
@@ -66,7 +70,7 @@
 ```
 
 ##### **4.2. ContextPackage (输出数据模型)**
-与 V1.0 保持一致，结构与《L1-DP5 内容生成与修订引擎 API 接口规范》中的 `DocumentGenerationRequest.context` 保持一致。
+与 V1.1 保持一致，结构与《L1-DP5 内容生成与修订引擎 API 接口规范》中的 `DocumentGenerationRequest.context` 保持一致。
 
 ```json
 {
@@ -92,11 +96,18 @@
 
 #### **5. 核心处理逻辑 (Core Processing Logic)**
 
-以下是 `aggregateContext` 函数必须遵循的、经过修正的伪代码逻辑。
+以下是 `aggregateContext` 函数必须遵循的、经过修订的伪代码逻辑。
 
 ```
 Function aggregateContext(task: TaskObject) -> ContextPackage {
-  
+
+  // [M-3] 优化：如果是修订模式，在所有操作之前先获取一次当前文档内容
+  currentDocContent = null;
+  if (task.generationMode == "REVISION") {
+    currentDocContent = call_L1_DP7_getContent(task.targetDocumentUri);
+    // 如果获取失败，L1-DP7的调用封装会抛出异常，函数提前终止
+  }
+
   // 步骤 1: 获取基础配置 (模板和词汇)
   templateContent = call_L1_DP7_getContent(task.contextUris.templateUri);
   lexiconContent = call_L1_DP7_getContent(task.contextUris.lexiconUri);
@@ -104,11 +115,11 @@ Function aggregateContext(task: TaskObject) -> ContextPackage {
   lexicon = JSON.parse(lexiconContent);
 
   // 步骤 2: 获取基础知识 (来自知识库)
-  query = "Information related to " + task.targetDocumentUri;
+  query = "Information related to document context: " + (task.targetDocumentUri || "new document");
   retrievalRequest = { query: query, max_results: 10 };
   retrievalResponse = call_L1_DP3_retrieveFragments(retrievalRequest);
   
-  // 步骤 3: [M-1] 解决知识冲突 (修正版，确保无数据丢失)
+  // 步骤 3: 解决知识冲突
   finalKnowledgeFragments = resolve_knowledge_conflicts(lexicon, retrievalResponse.fragments);
 
   // 步骤 4: 获取上游文档内容
@@ -118,7 +129,7 @@ Function aggregateContext(task: TaskObject) -> ContextPackage {
     upstreamDocuments.push({ uri: uri, content: content });
   }
 
-  // 步骤 5: [M-2] 如果是修订模式，获取并处理修订相关的上下文
+  // 步骤 5: 如果是修订模式，获取并处理修订相关的上下文
   reviewFeedback = null;
   priorityRevisions = null;
   
@@ -126,7 +137,6 @@ Function aggregateContext(task: TaskObject) -> ContextPackage {
     // 获取审查意见
     if (task.contextUris.reviewFeedbackUri) {
       feedbackContent = call_L1_DP7_getContent(task.contextUris.reviewFeedbackUri);
-      // [R-2] 调用标准解析器，其行为由 Schema 定义
       reviewFeedback = parse_reviewFeedback_md_to_json(feedbackContent); 
     }
     
@@ -135,9 +145,7 @@ Function aggregateContext(task: TaskObject) -> ContextPackage {
       revisionsContent = call_L1_DP7_getContent(task.contextUris.priorityRevisionsUri);
       revisionsYaml = YAML.parse(revisionsContent);
       
-      currentDocContent = call_L1_DP7_getContent(task.targetDocumentUri);
-      
-      // [M-2] 调用详细定义的健壮锚点定位算法
+      // [M-3] 直接使用在函数入口处获取的 currentDocContent
       priorityRevisions = process_priority_revisions(revisionsYaml, currentDocContent);
     }
   }
@@ -147,7 +155,7 @@ Function aggregateContext(task: TaskObject) -> ContextPackage {
     llmBehavioralStyle: template.componentSettings.dp5.llmConfig.behavioralStyle,
     upstreamDocuments: upstreamDocuments,
     lexiconAndConstraints: lexicon,
-    knowledgeFragments: finalKnowledgeFragments, // 使用无数据丢失的仲裁结果
+    knowledgeFragments: finalKnowledgeFragments,
     reviewFeedback: reviewFeedback,
     priorityRevisions: priorityRevisions
   };
@@ -157,9 +165,9 @@ Function aggregateContext(task: TaskObject) -> ContextPackage {
 ```
 
 ##### **5.1. 附录：核心算法详细定义**
+与 V1.1 保持一致。
 
-###### **`resolve_knowledge_conflicts` (指令 M-1 实现)**
-```
+###### **`resolve_knowledge_conflicts`**```
 Function resolve_knowledge_conflicts(lexicon, knowledgeFragments) -> List<Fragment> {
     
     // 1. 收集与分组: 按主题（术语）将所有信息源分组
@@ -175,7 +183,7 @@ Function resolve_knowledge_conflicts(lexicon, knowledgeFragments) -> List<Fragme
 
     // 从 L1-DP3 (知识库) 收集
     for (fragment in knowledgeFragments) {
-        // 假设每个片段能被映射到一个主题，此逻辑可细化
+        // [M-1] 此处调用行为已在附录 5.2 中明确定义
         topic = extract_topic_from_fragment(fragment); 
         unit = { source_component: "L1-DP3", content: fragment.content };
         if (!knowledgeMapByTopic.has(topic)) knowledgeMapByTopic.set(topic, []);
@@ -186,10 +194,8 @@ Function resolve_knowledge_conflicts(lexicon, knowledgeFragments) -> List<Fragme
     finalFragments = [];
     for ([topic, units] of knowledgeMapByTopic) {
         if (units.length == 1) {
-            // 无冲突，直接采纳
             finalFragments.push(units[0]);
         } else {
-            // 存在冲突，调用 L1-DP4 仲裁
             request = { topic: topic, units: units };
             response = call_L1_DP4_arbitrate(request);
             if (response.winning_unit != null) {
@@ -202,46 +208,38 @@ Function resolve_knowledge_conflicts(lexicon, knowledgeFragments) -> List<Fragme
 }
 ```
 
-###### **`process_priority_revisions` (指令 M-2 实现)**
+###### **`process_priority_revisions`**
 ```
 Function process_priority_revisions(revisionsYaml, currentDocContent) -> ResultObject {
     
     applicable = [];
     stale = [];
     
-    // 从项目模板获取可配置参数 (默认值)
     config = { w_e: 0.6, w_p: 0.2, w_s: 0.2, threshold: 0.9 };
     
-    // 1. 循环处理每个批注
     for (annotation in revisionsYaml.annotations) {
         
-        // 2. 基准定位
-        baselineUri = revisionsYaml.targetDocumentUri; // 包含 commit hash
+        baselineUri = revisionsYaml.targetDocumentUri;
         baselineContent = call_L1_DP7_getContent(baselineUri);
         
-        // 使用字符串相似度算法 (如 Levenshtein) 在基准文档中定位
+        // [M-2] 以下辅助函数的行为契约已在附录 5.2 中明确定义
         Score_exact = calculate_similarity(baselineContent, annotation.anchor.exact);
         Score_prefix = calculate_similarity(..., annotation.anchor.prefix);
         Score_suffix = calculate_similarity(..., annotation.anchor.suffix);
         
-        // 3. 置信度计算
         Confidence = (config.w_e * Score_exact) + (config.w_p * Score_prefix) + (config.w_s * Score_suffix);
         
         if (Confidence < config.threshold) {
             stale.push({ annotationId: annotation.annotationId, reason: "POSITIONING_FAILED", confidence: Confidence });
-            continue; // 处理下一个批注
+            continue;
         }
         
-        // 4. 变更传播分析
-        // 获取从基准版本到当前版本的内容差异
         diff = call_L1_DP7_getDiff(baselineUri, task.targetDocumentUri); 
         anchorAreaChanged = analyze_diff_for_changes(diff, located_position_in_baseline);
 
-        // 5. 决策与结果生成
         if (anchorAreaChanged) {
             stale.push({ annotationId: annotation.annotationId, reason: "CONTENT_DRIFT", confidence: Confidence });
         } else {
-            // 提取在 *当前* 文档中的上下文，用于LLM Prompt
             locatedContextInCurrentDoc = find_context_in_doc(currentDocContent, annotation.anchor);
             applicable.push({ 
                 annotationId: annotation.annotationId, 
@@ -251,7 +249,6 @@ Function process_priority_revisions(revisionsYaml, currentDocContent) -> ResultO
         }
     }
     
-    // 6. 输出构建
     return {
         applicableAnnotations: applicable,
         staleAnnotations: stale
@@ -259,10 +256,48 @@ Function process_priority_revisions(revisionsYaml, currentDocContent) -> ResultO
 }
 ```
 
-#### **6. 错误处理机制 (Error Handling Mechanism)**
+##### **5.2. 附录：核心辅助函数行为契约 (M-1, M-2 实现)**
 
-*   **服务调用失败:** 任何对 L1 服务的 API 调用如果失败，`aggregateContext` 函数必须立即停止执行，并向上层调用者（`L2-DP0`）抛出包含失败原因和源服务信息的 `ContextAggregationException` 异常。
-*   **内容解析失败:** 如果获取到的文件内容无法被正确解析（如无效的 JSON/YAML），函数也必须抛出 `ContextAggregationException` 异常，指明解析失败的文件URI和错误详情。
+###### **`extract_topic_from_fragment(fragment: KnowledgeFragment) -> string`**
+*   **输入:** 一个 `KnowledgeFragment` 对象。
+*   **输出:** 一个代表该片段主题的字符串 `topic`。
+*   **逻辑契约:**
+    1.  函数**必须**首先检查 `fragment.metadata` 对象中是否存在一个名为 `topic` 的字段。如果存在且其值为非空字符串，则**必须**直接返回该值。
+    2.  如果元数据中没有 `topic` 字段，函数**应该**对 `fragment.content` 应用标准的自然语言处理（NLP）关键字提取算法，并返回得分最高的关键字作为 `topic`。
+    3.  如果以上步骤均未产生结果，函数**必须**返回一个空字符串 `""`。
+
+###### **`calculate_similarity(full_text: string, substring: string) -> number`**
+*   **输入:** 完整的文档文本 `full_text` 和一个待查找的子字符串 `substring`。
+*   **输出:** 一个 `[0.0, 1.0]` 区间的浮点数，表示相似度得分。
+*   **逻辑契约:** 函数负责在 `full_text` 中找到与 `substring` 最相似的片段，并返回一个归一化的相似度得分（例如，基于 Levenshtein 距离）。返回 `1.0` 代表完全匹配。
+
+###### **`analyze_diff_for_changes(diff: DiffObject, located_position: Range) -> boolean`**
+*   **输入:** 一个由 `L1-DP7` 服务产生的 `diff` 对象，以及一个表示锚点在**基准文档**中位置的范围对象 `located_position` (例如，包含起始和结束字符索引)。
+*   **输出:** 一个布尔值。
+*   **逻辑契约:** 函数负责分析 `diff` 对象。如果 diff 中记录的任何“删除”或“修改”操作与 `located_position` 的范围存在重叠，则函数**必须**返回 `true`。否则，返回 `false`。
+
+###### **`find_context_in_doc(doc_content: string, anchor: Anchor) -> string`**
+*   **输入:** **当前**待修订文档的全文 `doc_content` 和一个 `anchor` 对象。
+*   **输出:** 一个字符串，表示在当前文档中定位到的、包含锚点及其周围上下文的实际文本。
+*   **逻辑契约:** 函数负责在 `doc_content` 中定位 `anchor.exact` 的最佳匹配位置，并返回该位置及其前后一定范围内的文本作为实际上下文。
+
+#### **6. 错误处理机制 (Error Handling Mechanism) (R-1 实现)**
+
+为实现更精细的错误处理，本组件的异常模型被细化。`aggregateContext` 函数在遇到错误时，**必须**抛出以下更具体的异常类型之一：
+
+*   **`ResourceNotFoundException`:**
+    *   **触发条件:** 当调用任何L1服务（如 `L1-DP7`）获取一个必要的资源URI时，服务返回了 `404 Not Found` 或等效的“未找到”错误。
+    *   **目的:** 允许上层调用者（`L2-DP0`）区分“永久性失败”（资源确实不存在）和“暂时性失败”，从而采取不同的策略（例如，直接中止任务并报告错误）。
+
+*   **`DependentServiceFailureException`:**
+    *   **触发条件:** 当调用任何L1服务时，服务返回了 `5xx` 系列的服务器错误（如 `500 Internal Server Error`, `503 Service Unavailable`）。
+    *   **目的:** 允许上层调用者识别出这是依赖服务本身的故障，而不是请求数据的问题。这可以触发如“重试”或“熔断”等更复杂的容错策略。
+
+*   **`ContextAggregationException`:**
+    *   **触发条件:** 用于其他所有在聚合过程中发生的、非特定于服务调用的错误。例如，获取到的文件内容无法被正确解析为有效的 JSON 或 YAML。
+    *   **目的:** 作为捕获其他所有内部逻辑错误的标准异常类型。
+
+所有异常对象都**必须**包含详细的错误信息，包括失败的资源URI（如果适用）和来自下游服务的原始错误消息。
 
 ---
 Gemini 2.5 Pro 0605 writer
