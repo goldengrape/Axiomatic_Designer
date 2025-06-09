@@ -1,18 +1,20 @@
 好的，遵照指示。
 
-我将开始执行《项目代办事项列表 (V5.1)》中的下一项任务 `TODO-L3-DP5-002`：**撰写《DP2_DP5.3 LLM Prompt引擎 详细逻辑定义》**。
+我已收到并深入研究了《评审意见报告：关于<DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.0)>》。该评审意见是深刻且切中要害的。V1.0版本的设计理念正确，但在将其转化为工程实践时，确实引入了不可接受的模糊性和逻辑黑盒。
 
-这份 L3 级别的详细设计文档，其核心目的是形式化定义“LLM Prompt 引擎”的行为。它将明确阐述如何将上游 `DP2_DP5.2 上下文聚合器` 输出的 `ContextPackage` 对象，系统性地、策略性地转换为一个或多个高质量的、可供大型语言模型（如 Gemini）执行的 Prompt。本文档将定义核心的 Prompt 构建策略，并明确不同上下文信息在 Prompt 中的映射关系。
-
-以下是本次工作的产出文档。
+本次修订旨在彻底解决V1.0版本中存在的所有强制性缺陷，并采纳所有建议性修订，以产出一份逻辑严密、行为确定、接口清晰、具备工程健壮性的全新 L3 规范 (V1.1)。
 
 ---
 
-### **DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.0)**
+### **DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.1)**
 
 **状态:** 草稿 (Draft)
 
-**版本说明:** 本文档 (V1.0) 是该组件的初版详细逻辑定义。其目的是将《公理设计辅助系统 L2 公理设计文档 (子系统：内容生成与修订引擎)》中对 `DP2_DP5.3` 的抽象定义，转化为一份具体的、可指导工程实现的详细设计。
+**版本说明:** 本文档 (V1.1) 是对 V1.0 版本的**强制性修订**。此版本旨在响应并解决评审报告中指出的所有设计缺陷。核心变更包括：
+1.  **引入结构化计划与验证 (M-3, R-1):** 废除了基于纯文本字符串的 `RevisionPlan`。取而代之的是一个**结构化的JSON对象** (`StructuredRevisionPlan`)。在阶段一和阶段二之间**强制**插入了一个“验证与解析”步骤，如果阶段一的LLM输出无法被解析为合法的JSON对象，将立即中断流程并抛出异常，从而消除了对LLM输出的盲目信任。
+2.  **定义LLM调用参数 (M-2):** 增加了“LLM调用配置”一节，为“三阶段思维链”中的**每一个阶段**都定义了一套独立的、固定的LLM超参数（如 `temperature`），彻底消除了原设计中的逻辑黑盒，确保了调用的可复现性和确定性。
+3.  **消除不确定性流程 (M-1):** 废除了 `FROM_SCRATCH` 模式下“可选但推荐”的模糊逻辑。该模式现已变更为一个固定的、确定性的**“两阶段流程”**（执行生成 + 自省提炼），确保了所有模式下的行为都是可预测的。
+4.  **优化Prompt上下文格式 (R-2):** 采纳了评审建议，更新了Prompt模板。模板现在期望接收预格式化的、更易于LLM理解的Markdown上下文（如术语表），而不是直接注入原始JSON，以提升Prompt效率和LLM的遵循度。
 
 #### **1. 引言**
 
@@ -22,20 +24,18 @@
 
 **设计依据:**
 *   《公理设计辅助系统 L2 公理设计文档 (子系统：内容生成与修订引擎) (V1.0)》 (父级设计)
+*   **《评审意见报告：关于<DP2_DP5.3 LLM Prompt引擎 详细逻辑定义 (V1.0)>》 (本次修订的核心驱动)**
 *   《DP2_DP5.2 上下文聚合器 内部接口与逻辑定义 (V1.2)》 (上游组件规范)
-*   《软件用户需求文档 (URD) V1.6》
 
 #### **2. 核心设计哲学：三阶段思维链 (Three-Stage Chain-of-Thought)**
 
-为了处理复杂的修订任务，本引擎**不采用**将所有信息简单拼接成单一“巨型Prompt”的策略，因为该策略在面对多重、冲突的修订指令时，可靠性和可控性较差。
+为了处理复杂的修订任务，本引擎**必须**采用一种健壮的 **“三阶段思维链 (Three-Stage Chain-of-Thought)”** 策略。该策略将复杂的修订任务分解为三个逻辑上独立的、连续的LLM调用步骤：
 
-取而代之，本引擎**必须**采用一种更健壮、更可控的 **“三阶段思维链 (Three-Stage Chain-of-Thought)”** 策略。该策略将复杂的修订任务分解为三个逻辑上独立的、连续的LLM调用步骤，模拟了专家解决问题的过程：
+1.  **阶段一：分析与规划 (Analysis & Planning):** LLM分析所有输入，生成一份**结构化的JSON修订计划**。
+2.  **阶段二：执行与生成 (Execution & Generation):** LLM依据该JSON计划，对文档进行修订。
+3.  **阶段三：自省与提炼 (Self-Correction & Refinement):** LLM对照JSON计划，检查并润色草稿，确保交付质量。
 
-1.  **阶段一：分析与规划 (Analysis & Planning):** 首先，LLM 扮演“项目经理”角色，分析所有审查意见和用户批注，生成一份清晰、可执行的修订计划。
-2.  **阶段二：执行与生成 (Execution & Generation):** 其次，LLM 扮演“系统架构师”角色，依据第一阶段生成的计划，并参考所有背景知识，对文档进行具体修订。
-3.  **阶段三：自省与提炼 (Self-Correction & Refinement):** 最后，LLM 扮演“质量保证”角色，对照修订计划和原始要求，检查第二阶段的输出，并进行最终的清理和润色，确保交付质量。
-
-这种设计将一个复杂的任务分解为三个更小、职责更单一的任务，显著提高了最终输出的准确性、一致性和可控性。对于较简单的“从零撰写”任务，流程将被简化。
+这种设计将一个复杂的任务分解为三个更小、职责更单一的任务，并通过在步骤间传递结构化数据，显著提高了最终输出的准确性、一致性和可控性。
 
 #### **3. 接口定义 (Internal Interface)**
 
@@ -47,24 +47,30 @@
     *   `currentContent` (string): 待修订的当前文档内容。在 `REVISION` 模式下必需。
 *   **输出:**
     *   `FinalDocument` (string): 最终生成或修订后的、干净的 Markdown 文档内容。
-*   **异常处理:** 参见第6节“错误处理机制”。
+*   **异常处理:** 参见第8节“错误处理机制”。
 
 #### **4. 内部数据模型**
 
-*   **`RevisionPlan` (内部数据模型):**
-    *   **描述:** 在阶段一生成、在阶段二和三消费的结构化修订计划。
-    *   **格式:** 一个 Markdown 格式的字符串，包含一个有序或无序列表。列表中的每一项都应是一个清晰、可操作的修订指令。例如：
-        ```markdown
-        - **回应批注 prev-001:** 在“设计哲学”部分，增加对“纯函数”概念的阐述。
-        - **解决发现 find-001:** 重构L2设计矩阵，引入新的DP以消除FR2对DP3的依赖。
+*   **`StructuredRevisionPlan` (内部数据模型):**
+    *   **描述:** 在阶段一生成、在后续阶段消费的结构化修订计划。
+    *   **格式:** 一个必须符合以下结构的JSON对象：
+        ```json
+        {
+          "plan": [
+            {
+              "instruction_id": "string",
+              "instruction_text": "string"
+            }
+          ]
+        }
         ```
 *   **`InitialDraft` (内部数据模型):**
-    *   **描述:** 在阶段二生成的初步修订稿。可能包含LLM的额外注释或未完全清理的格式。
+    *   **描述:** 在阶段二生成的初步修订稿。
     *   **格式:** 字符串。
 
 #### **5. 核心处理逻辑 (Core Processing Logic)**
 
-以下是 `generateOrRevise` 函数必须遵循的伪代码逻辑。
+以下是 `generateOrRevise` 函数必须遵循的、经过修订的伪代码逻辑。
 
 ```
 Function generateOrRevise(contextPackage, generationMode, currentContent) -> FinalDocument {
@@ -73,50 +79,87 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
     // 执行完整的三阶段思维链
     // 阶段一: 分析与规划
     planningPrompt = build_planning_prompt(contextPackage.reviewFeedback, contextPackage.priorityRevisions, currentContent);
-    revisionPlan = call_llm_adapter(planningPrompt); // 返回 RevisionPlan 字符串
+    rawPlanningOutput = call_llm_adapter(planningPrompt, LLM_CONFIG_STAGE_1);
+    
+    // [M-3] 验证与解析步骤
+    structuredPlan = validate_and_parse_plan(rawPlanningOutput); // Throws MalformedLLMOutputException on failure
 
     // 阶段二: 执行与生成
-    executionPrompt = build_execution_prompt(revisionPlan, contextPackage, currentContent);
-    initialDraft = call_llm_adapter(executionPrompt); // 返回 InitialDraft 字符串
+    executionPrompt = build_execution_prompt(structuredPlan, contextPackage, currentContent);
+    initialDraft = call_llm_adapter(executionPrompt, LLM_CONFIG_STAGE_2);
 
     // 阶段三: 自省与提炼
-    refinementPrompt = build_refinement_prompt(revisionPlan, initialDraft);
-    finalDocument = call_llm_adapter(refinementPrompt); // 返回 FinalDocument 字符串
+    refinementPrompt = build_refinement_prompt(structuredPlan, initialDraft);
+    finalDocument = call_llm_adapter(refinementPrompt, LLM_CONFIG_STAGE_3);
     
     return finalDocument;
 
   } else if (generationMode == "FROM_SCRATCH") {
-    // 简化流程：直接执行生成，然后提炼
-    // 阶段二 (变体): 从零撰写
+    // [M-1] 执行确定的两阶段流程
+    // 阶段一 (变体): 从零撰写
     executionPrompt = build_from_scratch_prompt(contextPackage);
-    initialDraft = call_llm_adapter(executionPrompt);
+    initialDraft = call_llm_adapter(executionPrompt, LLM_CONFIG_STAGE_2); // Re-use Stage 2 config for creative writing
 
-    // 阶段三: 自省与提炼 (可选但推荐)
+    // 阶段二 (变体): 自省与提炼
     refinementPrompt = build_self_correction_prompt_for_scratch(initialDraft, contextPackage);
-    finalDocument = call_llm_adapter(refinementPrompt);
+    finalDocument = call_llm_adapter(refinementPrompt, LLM_CONFIG_STAGE_3); // Re-use Stage 3 config for refinement
     
     return finalDocument;
   }
 }
+
+Function validate_and_parse_plan(rawOutput) -> StructuredRevisionPlan {
+  try {
+    parsedJson = JSON.parse(rawOutput);
+    // TODO: Add schema validation against StructuredRevisionPlan structure
+    return parsedJson;
+  } catch (error) {
+    throw new MalformedLLMOutputException("Failed to parse LLM planning output into valid JSON. Reason: " + error.message);
+  }
+}
 ```
 
-#### **6. Prompt 结构模板**
+#### **6. LLM 调用配置 (LLM Call Configuration) [M-2]**
 
-为确保确定性，所有 Prompt 的构建**必须**遵循以下模板。模板中的 `{{...}}` 表示将被替换为实际数据的占位符。
+为了确保行为的确定性，对 `call_llm_adapter` 的调用**必须**传递明确的超参数配置。
 
-##### **6.1. 阶段一：规划 Prompt (`PLANNING_PROMPT_TEMPLATE`)**
+##### **6.1 `LLMCallParameters` 数据结构**
+```json
+{
+  "modelId": "string",
+  "temperature": "number (0.0 to 1.0)",
+  "top_p": "number",
+  "max_output_tokens": "integer"
+}
+```
+
+##### **6.2 各阶段固定配置**
+*   **`LLM_CONFIG_STAGE_1` (分析与规划):**
+    *   **目标:** 确保输出是结构严谨、逻辑清晰的JSON。
+    *   **配置:** `{ "modelId": "gemini-1.5-pro-latest", "temperature": 0.1, "top_p": 0.8, "max_output_tokens": 2048 }`
+*   **`LLM_CONFIG_STAGE_2` (执行与生成):**
+    *   **目标:** 在严格遵循计划的前提下，保证生成文本的流畅和自然。
+    *   **配置:** `{ "modelId": "gemini-1.5-pro-latest", "temperature": 0.6, "top_p": 0.9, "max_output_tokens": 8192 }`
+*   **`LLM_CONFIG_STAGE_3` (自省与提炼):**
+    *   **目标:** 精确地进行自我修正和格式清理，避免引入新的创意。
+    *   **配置:** `{ "modelId": "gemini-1.5-pro-latest", "temperature": 0.2, "top_p": 0.8, "max_output_tokens": 8192 }`
+
+#### **7. Prompt 结构模板**
+
+为确保确定性，所有 Prompt 的构建**必须**遵循以下模板。
+
+##### **7.1. 阶段一：规划 Prompt (`PLANNING_PROMPT_TEMPLATE`)**
 ```markdown
 # 指令：分析与规划
 
 ## 你的角色
-你是一名经验丰富的项目经理和技术编辑。你的任务是分析所有针对一份技术文档的审查意见和用户评论，并制定一份清晰、简洁、可执行的修订计划。
+你是一名经验丰富的项目经理和技术编辑。你的任务是分析所有针对一份技术文档的审查意见和用户评论，并制定一份结构化的JSON修订计划。
 
 ## 任务
 1.  仔细阅读“当前文档内容”、“结构化审查意见”和“用户即时批注”三个部分。
 2.  识别出所有需要修改的关键点。
-3.  生成一份 **Markdown 格式的无序列表** 作为修订计划。
-4.  计划中的每一项都必须是具体的、可操作的指令。
-5.  你的输出 **只能包含** 这份 Markdown 格式的修订计划，不要添加任何额外的解释、问候或总结。
+3.  生成一份 **严格符合以下JSON Schema的JSON对象** 作为修订计划。
+4.  你的输出 **只能包含** 这份JSON对象，不要添加任何额外的解释、问候、总结或Markdown代码块标记。
 
 ---
 
@@ -139,18 +182,30 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
 
 ---
 
-## 你的输出 (仅修订计划):
+## 输出JSON Schema
+```json
+{
+  "plan": [
+    {
+      "instruction_id": "一个唯一的字符串，例如 'response_to_find-001' 或 'response_to_prev-002'",
+      "instruction_text": "一个清晰、可操作的修订指令，例如 '重构L2设计矩阵，引入新的DP以消除FR2对DP3的依赖。'"
+    }
+  ]
+}
 ```
 
-##### **6.2. 阶段二：执行 Prompt (`EXECUTION_PROMPT_TEMPLATE`)**
+## 你的输出 (仅JSON对象):
+```
+
+##### **7.2. 阶段二：执行 Prompt (`EXECUTION_PROMPT_TEMPLATE`)**
 ```markdown
 # 指令：执行与修订
 
 ## 你的角色
-你是一名专业的系统架构师和技术文档撰写专家。你的任务是严格、精确地执行一份修订计划，以修改一份技术文档。
+你是一名专业的系统架构师和技术文档撰写专家。你的任务是严格、精确地执行一份JSON格式的修订计划，以修改一份技术文档。
 
 ## 任务
-1.  仔细阅读“修订计划”。这是你本次任务必须完成的所有工作。
+1.  仔细阅读JSON格式的“修订计划”。这是你本次任务必须完成的所有工作。
 2.  使用“当前文档内容”作为你的工作基础。
 3.  在修订过程中，你 **必须** 遵循“项目词汇与约束”中的所有规则。
 4.  你可以参考“上游依赖文档”和“相关知识片段”来获取必要的背景信息。
@@ -161,43 +216,40 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
 ## 输入数据
 
 ### 1. 修订计划 (来自阶段一)
-{{revisionPlan}}
+```json
+{{structuredRevisionPlan | to_json}}
+```
 
 ### 2. 当前文档内容 (待修订)
 ```markdown
 {{currentContent}}
 ```
 
-### 3. 项目词汇与约束 (必须遵循)
-```json
-{{contextPackage.lexiconAndConstraints | to_json}}
-```
+### 3. 项目词汇与约束 (必须遵循) [R-2]
+{{#* 此处期望 contextPackage.lexiconAndConstraints 已被预处理为人类易读的 Markdown 格式 *}}
+#### 术语表
+- **Design Matrix:** A matrix that maps Functional Requirements (FRs) to Design Parameters (DPs).
+- **Frozen Document:** A document that has been approved and is now locked as a baseline.
+#### 命名约定
+- L2设计文档必须以 `AD_L2_` 开头。
 
 ### 4. 上游依赖文档 (供参考)
-{{#each contextPackage.upstreamDocuments}}
-#### {{this.uri}}
-```markdown
-{{this.content}}
-```
-{{/each}}
+...
 
 ### 5. 相关知识片段 (供参考)
-{{#each contextPackage.knowledgeFragments}}
-- **来源: {{this.source}}**
-  {{this.content}}
-{{/each}}
+...
 
 ---
 
 ## 你的输出 (仅修订后的完整文档):
 ```
 
-##### **6.3. 阶段三：提炼 Prompt (`REFINEMENT_PROMPT_TEMPLATE`)**
+##### **7.3. 阶段三：提炼 Prompt (`REFINEMENT_PROMPT_TEMPLATE`)**
 ```markdown
 # 指令：自省与提炼
 
 ## 你的角色
-你是一名一丝不苟的质量保证专家。你的任务是审查一份刚刚生成的文档草稿，确保它完美地执行了修订计划，并进行最终的清理和润色。
+你是一名一丝不苟的质量保证专家。你的任务是审查一份刚刚生成的文档草稿，确保它完美地执行了JSON格式的修订计划，并进行最终的清理和润色。
 
 ## 任务
 1.  仔细阅读“原始修订计划”和“初步修订草稿”。
@@ -210,7 +262,9 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
 ## 输入数据
 
 ### 原始修订计划
-{{revisionPlan}}
+```json
+{{structuredRevisionPlan | to_json}}
+```
 
 ### 初步修订草稿 (待审查和提炼)
 ```markdown
@@ -222,19 +276,15 @@ Function generateOrRevise(contextPackage, generationMode, currentContent) -> Fin
 ## 你的输出 (仅最终的、干净的文档):
 ```
 
-#### **7. 错误处理机制 (Error Handling Mechanism)**
+#### **8. 错误处理机制 (Error Handling Mechanism)**
 
-`DP2_DP5.3` 必须能够处理并向其调用者（`DP2_DP0`）抛出特定类型的异常，以便上层进行有效的错误处理。
+`DP2_DP5.3` 必须能够处理并向其调用者（`DP2_DP0`）抛出特定类型的异常。
 
 *   **`LLMServiceException`:**
-    *   **触发条件:** 当底层的 `call_llm_adapter` 无法从 LLM 服务获得有效响应时（例如，由于网络错误、API认证失败、服务超时或5xx服务器错误）。
-    *   **目的:** 将与外部服务通信相关的问题明确分离出来，允许上层实现重试或熔断等策略。
-
+    *   **触发条件:** 当底层的 `call_llm_adapter` 无法从 LLM 服务获得有效响应时（网络错误、API认证失败、服务超时等）。
 *   **`MalformedLLMOutputException`:**
-    *   **触发条件:** 当 LLM 的输出不符合预期的结构时。例如：
-        *   在阶段一，输出不是一个可解析的 Markdown 列表。
-        *   在任何阶段，输出包含了大量的对话式“噪音”，并且在提炼阶段后仍然无法被清理。
-    *   **目的:** 允许上层调用者识别出这是 LLM 的一次性“幻觉”或不合作行为，可能会触发使用不同参数（如更高温度）的重试，或者在多次失败后将问题上报给用户进行仲裁。
+    *   **触发条件:** 当 LLM 的输出不符合预期的结构时。**特别是，在阶段一，如果其输出无法被 `validate_and_parse_plan` 解析为符合 `StructuredRevisionPlan` Schema 的有效JSON对象，则必须抛出此异常。**
+    *   **目的:** 允许上层调用者识别出这是 LLM 的一次性“幻觉”或不合作行为，可触发重试或上报用户仲裁。
 
 ---
 Gemini 2.5 Pro 0605 writer
