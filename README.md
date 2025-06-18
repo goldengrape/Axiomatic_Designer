@@ -1,8 +1,8 @@
-# Axiomatic Design Loop Forge
+# Axiomatic Designer
 
 ## 📖 Overview
 
-Axiomatic Design Loop Forge is a web application designed to assist users in iteratively generating, reviewing, and optimizing documents or code through AI-powered agents. It leverages the principles of Axiomatic Design, allowing for a structured approach to complex problem-solving and content creation. Users can configure iteration parameters, track the history of generated drafts, and engage in multiple rounds of AI-driven writing and reviewing to achieve high-quality outputs.
+Axiomatic Designer is a web application designed to assist users in iteratively generating, reviewing, and optimizing documents or code through AI-powered agents. It leverages the principles of Axiomatic Design, allowing for a structured approach to complex problem-solving and content creation. Users can configure iteration parameters, track the history of generated drafts, and engage in multiple rounds of AI-driven writing and reviewing to achieve high-quality outputs.
 
 The application uses Google's Gemini AI models for its core generation and review capabilities.
 
