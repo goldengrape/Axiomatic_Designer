@@ -1,0 +1,6 @@
+{
+  "name": "公理设计分析Loop Forge",
+  "description": "一个通过AI辅助，迭代生成、审查和优化文档或代码的Web应用。用户可以配置迭代参数，追踪历史，并与AI进行多轮交互以达到期望的输出质量。",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
