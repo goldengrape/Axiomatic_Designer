@@ -1,8 +1,8 @@
-# Axiomatic Designer
+# Axiomatic Design Loop Forge
 
 ## 📖 Overview
 
-Axiomatic Designer is a web application designed to assist users in iteratively generating, reviewing, and optimizing documents or code through AI-powered agents. It leverages the principles of Axiomatic Design, allowing for a structured approach to complex problem-solving and content creation. Users can configure iteration parameters, track the history of generated drafts, and engage in multiple rounds of AI-driven writing and reviewing to achieve high-quality outputs.
+Axiomatic Design Loop Forge is a web application designed to assist users in iteratively generating, reviewing, and optimizing documents or code through AI-powered agents. It leverages the principles of Axiomatic Design, allowing for a structured approach to complex problem-solving and content creation. Users can configure iteration parameters, track the history of generated drafts, and engage in multiple rounds of AI-driven writing and reviewing to achieve high-quality outputs.
 
 The application uses Google's Gemini AI models for its core generation and review capabilities.
 
@@ -30,6 +30,7 @@ The application uses Google's Gemini AI models for its core generation and revie
 *   **Frontend:** React 19, TypeScript
 *   **Styling:** Tailwind CSS
 *   **AI:** Google Gemini API (`@google/genai`)
+*   **Dependencies:** Loaded via CDN (esm.sh) using an import map.
 *   **Localization:** Custom i18n solution with JSON-like locale files.
 
 ## 🚀 Getting Started
@@ -39,26 +40,41 @@ The application uses Google's Gemini AI models for its core generation and revie
 *   A modern web browser with JavaScript enabled.
 *   An active Google Gemini API Key.
 
+### Dependencies & `npm`
+
+*   **No `npm install` Required (Current Setup):** This application, in its current state, loads its main JavaScript dependencies (React, `@google/genai`) directly from a CDN (Content Delivery Network) using an `<script type="importmap">` in `index.html`. Therefore, you **do not** need to run `npm install` or have Node.js installed just to run these files as they are.
+*   **Local Development Considerations:** While `npm` isn't needed to serve the files, more advanced local development setups (e.g., for features like hot-reloading or easier API key management via `.env` files) would typically involve Node.js, npm/yarn, and a development server like Vite or Create React App. This project is not currently structured that way. **The main challenge with local development using simple static servers like `http-server` is ensuring `.tsx` and `.jsx` files are served with the correct JavaScript MIME type.** (See "Running the Application" section below).
+
 ### API Key Configuration
 
 This application requires a Google Gemini API key to function. The API key **must** be available in the execution environment as `process.env.API_KEY`.
 
-*   **IMPORTANT:** The application code directly uses `process.env.API_KEY`. You **must not** attempt to hardcode the key into the application's source files (`services/geminiService.ts` or elsewhere).
-*   **Local Development:** If you are running this application locally using a simple static file server, `process.env.API_KEY` will not be directly available. You would typically need:
-    1.  A local development server that can inject environment variables into your client-side code (e.g., using a tool like Vite or Next.js, though this project currently uses a simpler setup).
-    2.  Alternatively, for very basic local testing *without modifying the core application code*, you might use browser extensions or other methods to define `process.env.API_KEY` in the JavaScript context before the application loads. However, the recommended approach is to use an environment that properly handles `.env` files or server-side environment variable injection.
-*   **Deployment:** When deploying this application, ensure your hosting environment (e.g., Vercel, Netlify, a custom Node.js server) is configured to provide the `API_KEY` as an environment variable to the application.
+*   **IMPORTANT:** The application code (`services/geminiService.ts`) directly attempts to read `process.env.API_KEY`. You **must not** hardcode your API key into the application's source files. The application will not prompt you for an API key.
+
+*   **Local Development Challenge:**
+    *   When you run `index.html` directly in a browser (even via a simple static file server), `process.env.API_KEY` will **not** be defined by default, as `process.env` is a Node.js concept. The application will likely fail to initialize the Gemini API client.
+    *   **Solutions for Local Development:**
+        1.  **Recommended for robust development:** Use a local development server (e.g., Vite, Next.js, Parcel) that supports environment variables, typically through a `.env` file at the root of your project. These servers also correctly handle transpilation and serving of `.tsx` and `.jsx` files. This kind of setup would usually require Node.js and `npm`.
+        2.  **Basic local testing (without code modification):** You might use browser developer tools or extensions to manually define `process.env.API_KEY` in the JavaScript context of the page *before* the application's scripts execute. For example, you could open your browser's developer console and execute `window.process = { env: { API_KEY: 'YOUR_ACTUAL_API_KEY' } };` *before* the page fully loads or any script errors occur. This is a temporary workaround for testing and not a production solution. *Remember to replace `'YOUR_ACTUAL_API_KEY'` with your real key and be cautious about exposing your key.*
+
+*   **Deployment:** When deploying this application, ensure your hosting environment (e.g., Vercel, Netlify, a custom Node.js server) is configured to provide the `API_KEY` as an environment variable to the application's runtime.
 
 ### Running the Application
 
-1.  **Clone/Download Files:** Ensure you have all the project files (`index.html`, `index.tsx`, `App.tsx`, `locales/`, `components/`, `services/`, `constants.ts`, `types.ts`, `metadata.json`).
-2.  **Serve Locally:**
-    *   Due to the use of ES modules and to avoid CORS issues with local file access (`file:///`), you should serve the `index.html` file using a local HTTP server.
-    *   You can use simple tools like `http-server` (Node.js package) or Python's `http.server`:
-        *   Using `npx http-server .` (if you have Node.js/npm)
-        *   Using `python -m http.server` (if you have Python)
-    *   Open your browser and navigate to the local address provided by the server (e.g., `http://localhost:8080`).
-3.  **Ensure API Key is Accessible:** As mentioned above, the JavaScript environment running in your browser must have `process.env.API_KEY` defined and accessible.
+1.  **Clone/Download Files:** Ensure you have all the project files, including the new `mime.types` file.
+2.  **Serve Locally with Correct MIME Types:**
+    *   Due to the use of ES modules and `.tsx` files, you must serve `index.html` using a local HTTP server that correctly identifies `.tsx` files as JavaScript.
+    *   **Using `npx http-server` (Recommended for this setup):**
+        *   Open your terminal in the root directory of the project (where `index.html` and `mime.types` are).
+        *   Run the following command:
+            ```bash
+            npx http-server . --mimetypes mime.types
+            ```
+        *   This command tells `http-server` to use the `mime.types` file to correctly set the `Content-Type` header for `.tsx`, `.ts`, and `.jsx` files to `application/javascript`.
+        *   Open your browser and navigate to the local address provided by the server (e.g., `http://localhost:8080`).
+    *   **Other static servers:** If you use a different server (like `python -m http.server`), it might not serve `.tsx` files with the correct MIME type by default, leading to the "Expected a JavaScript-or-Wasm module script" error. Using a proper development server (like Vite or Parcel) or configuring your static server for custom MIME types is essential.
+3.  **Hard Refresh Browser:** After starting the server, or if you still see issues, do a hard refresh in your browser (e.g., Ctrl+Shift+R or Cmd+Shift+R) to clear any cached files or incorrect MIME types.
+4.  **Ensure API Key is Accessible (Crucial for Local Running):** As detailed in the "API Key Configuration" section, `process.env.API_KEY` must be defined in the JavaScript environment where the app runs.
 
 ## ⚙️ How to Use
 

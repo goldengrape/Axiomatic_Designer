@@ -9,10 +9,12 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
+
+// Use React.createElement to avoid JSX in this entry file
 root.render(
-  <React.StrictMode>
-    <LocaleProvider>
-      <App />
-    </LocaleProvider>
-  </React.StrictMode>
+  React.createElement(React.StrictMode, null,
+    React.createElement(LocaleProvider, null,
+      React.createElement(App, null)
+    )
+  )
 );
